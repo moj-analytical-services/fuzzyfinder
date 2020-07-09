@@ -1,7 +1,7 @@
 ## Aim
 
 - Given a record, we want to find a list of potentially-matching records in large table
-- We want those records to be 
+- We want those records to be
 
 - User should have the option of either:
   - Populating a on-disk SQLite db
@@ -18,20 +18,20 @@
 
 ## Abstractions
 
-- A record. 
+- A record.
     Main role is formatting the record, tokenising etc.
     Constain beta information about columns etc.
     - properties:
         - record as a dict
     - methods:
-        - convert record into cleaned tokenised string for fts 
+        - convert record into cleaned tokenised string for fts
 
-    - an additional function get_toke_probabilities(record, sqliteconnection)  so that record class is 'pure' (doesn't need to know about sqlite)
+
 
 
 
 - RecordComparison
-    
+
     -properties
         The two records
     - methods
@@ -43,8 +43,10 @@
 - RecordComparisonScorer
     Takes two records and computes a match score using probabilities
 
+    - an additional function get_toke_probabilities(record, sqliteconnection)  so that record class is 'pure' (doesn't need to know about sqlite)
+
 - MatchGetter
-  - Give it a record and it gives you back potentially matching records 
+  - Give it a record and it gives you back potentially matching records
 
 
 - SearchDatabase

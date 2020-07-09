@@ -4,7 +4,6 @@ import re
 
 from metaphone import doublemetaphone
 
-
 class Record:
     """ Represents a row of a dataset.
 
@@ -43,6 +42,7 @@ class Record:
         return self.record_dict[self.unique_id_col]
 
     @staticmethod
+    @lru_cache(maxsize=int(1e6))
     def tokenise_value(value):
         if value is None:
             return []
