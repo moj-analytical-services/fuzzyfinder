@@ -1,0 +1,35 @@
+#!/bin/sh
+#
+# comment out a section to turn that check off
+# commit without checks by adding --no-verify to your commit command
+
+# run Black on all .py files
+printf "\n\e[1mRunning Black Python code formatter\e[0m\n"
+hash black 2>/dev/null || { echo >&2 "Black not installed in this environment. Halting commit."; exit 1; }
+black .
+
+# run flake8 on all .py files
+printf "\n\e[1mRunning flake8 Python linter\e[0m\n"
+hash flake8 2>/dev/null || { echo >&2 "flake8 not installed in this environment. Halting commit."; exit 1; }
+flake8 .
+
+# run yamllint on all .yaml and .yml files
+printf "\n\e[1mRunning yamllint .yaml linter\e[0m\n"
+hash yamllint 2>/dev/null || { echo >&2 "yamllint not installed in this environment. Halting commit."; exit 1; }
+yamllint .
+
+printf "\n\e[1mRunning git-crypt status and checking for warnings\e[0m\n"
+# git-crypt check for unencrypted file warnings adapted from https://www.gitmemory.com/issue/AGWA/git-crypt/45/614607121
+if [ -d ".git-crypt" ]; then
+    hash git-crypt status | grep "\*\*\* WARNING"; test $? -eq 1
+fi
+printf "git-crypt fine\n\n"
+
+exec < /dev/tty
+while read -p "Continue with commit? (Y/n) " yn; do
+    case $yn in
+        [Yy] ) printf "Continuing with commit\n"; break;;
+        [Nn] ) printf "Cancelling commit\n"; exit 1;;
+        * ) echo "Please answer y (yes) or n (no):" && continue;
+    esac
+done
