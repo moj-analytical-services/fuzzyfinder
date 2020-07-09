@@ -1,1 +1,19 @@
-[tool.black]
+[tool.poetry]
+name = "fuzzyfinder"
+version = "0.1.0"
+description = "Fuzzy search for matching records and score search results according to how closely they match"
+authors = ["Robin Linacre <robinlinacre@hotmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.6"
+
+[tool.poetry.dev-dependencies]
+flake8 = "^3.8"
+black = "^19.10b0"
+yamllint = "^1.23.0"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
