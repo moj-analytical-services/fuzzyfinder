@@ -11,7 +11,7 @@ class SearchDatabaseBuilder:
     that contains the records we want to search within
     """
 
-    def __init__(self,db_filename: str = None):
+    def __init__(self, db_filename: str = None):
         """
         Args:
             filename (str, optional):  The filename for the database.  If none, the database will be an in-memory
@@ -46,11 +46,14 @@ class SearchDatabaseBuilder:
         results = c.fetchall()
         c.close()
 
-        tokens_tables = [d['name'] for d in results if re.search('raw_tokens$', d['name'])]
-        expected_tokens_tables = [f"{c}_raw_tokens" for c in self.example_record.columns_except_unique_id]
+        tokens_tables = [
+            d["name"] for d in results if re.search("raw_tokens$", d["name"])
+        ]
+        expected_tokens_tables = [
+            f"{c}_raw_tokens" for c in self.example_record.columns_except_unique_id
+        ]
 
-        return(set(tokens_tables) == set(expected_tokens_tables))
-
+        return set(tokens_tables) == set(expected_tokens_tables)
 
     def initialise_db(self):
         c = self.conn.cursor()
@@ -98,7 +101,7 @@ class SearchDatabaseBuilder:
 
         c = self.conn.cursor()
 
-        c.execute(f"INSERT INTO df VALUES (?, ?, ?)",(uid, jsond, concat))
+        c.execute("INSERT INTO df VALUES (?, ?, ?)", (uid, jsond, concat))
 
         tfd = record.tokenised_including_mispellings
 
@@ -106,7 +109,5 @@ class SearchDatabaseBuilder:
         for col in columns:
             tokens = tfd[col]
             for t in tokens:
-                c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)",(t,))
+                c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)", (t,))
         c.close()
-
-
