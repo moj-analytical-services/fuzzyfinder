@@ -1,9 +1,12 @@
 import json
-import re
 import sqlite3
 
 from .utils import dict_factory
 from .record import Record
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SearchDatabaseBuilder:
@@ -26,34 +29,50 @@ class SearchDatabaseBuilder:
         # The connection will 'render' query results as list of dicts
         self.conn.row_factory = dict_factory
 
-        if self.db_is_empty:
+        if not self._table_df_exists:
             self.initialise_db()
 
+        # If connected to a database that already has records
         self.example_record = None
+        if not self._table_df_is_empty:
+            self.set_example_record_from_db()
 
     @property
-    def db_is_empty(self):
+    def _table_df_exists(self):
         c = self.conn.cursor()
-        c.execute("SELECT name FROM sqlite_master")
-        results = c.fetchall()
+        try:
+            c.execute("SELECT * FROM df limit 1")
+        except sqlite3.OperationalError:
+            # df does not exist
+            c.close()
+            return False
         c.close()
-        return len(results) == 0
+        return True
 
     @property
-    def db_has_column_raw_token_tables(self):
+    def _table_df_is_empty(self):
         c = self.conn.cursor()
-        c.execute("SELECT name FROM sqlite_master")
-        results = c.fetchall()
+        try:
+            c.execute("SELECT count(*) as rec_count FROM df")
+        except sqlite3.OperationalError:
+            # df does not exist
+            c.close()
+            return True
+
+        result = c.fetchone()
         c.close()
+        if result["rec_count"] == 0:
+            return True
+        else:
+            return False
 
-        tokens_tables = [
-            d["name"] for d in results if re.search("raw_tokens$", d["name"])
-        ]
-        expected_tokens_tables = [
-            f"{c}_raw_tokens" for c in self.example_record.columns_except_unique_id
-        ]
+    @property
+    def db_status(self):
+        if not self._table_df_exists:
+            return "blank"
 
-        return set(tokens_tables) == set(expected_tokens_tables)
+        if not self._table_df_is_empty:
+            return "build_in_progress"
 
     def initialise_db(self):
         c = self.conn.cursor()
@@ -85,10 +104,11 @@ class SearchDatabaseBuilder:
 
     def set_example_record(self, record):
         self.example_record = record
-        if not self.db_has_column_raw_token_tables:
+        if self._table_df_is_empty:
             self.initialise_token_tables()
 
-    def write_record(self, record: Record):
+    def _write_record_no_commit(self, record: Record):
+        # Do not want to commit after every write because it slows things down too much
 
         # Want to avoid user explicity having to pass an example record in on __init__
         # Instead, we set up the databse when we first see a record
@@ -101,7 +121,12 @@ class SearchDatabaseBuilder:
 
         c = self.conn.cursor()
 
-        c.execute("INSERT INTO df VALUES (?, ?, ?)", (uid, jsond, concat))
+        try:
+            c.execute("INSERT INTO df VALUES (?, ?, ?)", (uid, jsond, concat))
+        except sqlite3.IntegrityError:
+            logger.debug(f"Record id {uid} already exists in db, ignoring")
+            c.close()
+            return None
 
         tfd = record.tokenised_including_mispellings
 
@@ -111,3 +136,102 @@ class SearchDatabaseBuilder:
             for t in tokens:
                 c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)", (t,))
         c.close()
+
+    def write_records(self, records: list):
+        # In batches of 1000
+        counter = 0
+        for r in records:
+            self._write_record_no_commit(r)
+            counter += 1
+            if counter % 1000 == 0:
+                logger.debug(f"Records written: {counter}")
+                self.conn.commit()
+        self.conn.commit()
+
+    def set_example_record_from_db(self):
+        c = self.conn.cursor()
+
+        c.execute("select original_record from df limit 1")
+        record = c.fetchone()
+        c.close()
+        record = record["original_record"]
+        record = json.loads(record)
+        self.example_record = Record(record)
+
+    def create_or_replace_token_stats_tables(self):
+        rec = self.example_record
+        columns = rec.columns_except_unique_id
+
+        c = self.conn.cursor()
+        for col in columns:
+            c.execute(f"""DROP TABLE IF EXISTS {col}_token_proportions""")
+
+            logger.debug(f"Creating table {col}_token_proportions")
+            sql = f"""
+            create table {col}_token_proportions as
+            select token, cast(count(*) as float)/(select count(*) from {col}_raw_tokens) as token_proportion
+            from {col}_raw_tokens
+            group by token
+            """
+            c.execute(sql)
+            self.conn.commit()
+            logger.debug(f"Created table {col}_token_proportions.  Indexing...")
+
+            sql = f"""
+            CREATE INDEX {col}_token_proportions_idx ON {col}_token_proportions (token);
+            """
+            c.execute(sql)
+            self.conn.commit()
+            logger.debug(f"Indexed table {col}_token_proportions")
+        c.close()
+
+    def create_or_replace_fts_table(self):
+        c = self.conn.cursor()
+        logger.debug("Starting to create FTS table")
+        # Create FTS
+        c.execute("""DROP TABLE IF EXISTS fts_target""")
+        sql = """
+        CREAT VIRTUAL TABLE fts_target
+        USING fts4(unique_id TEXT, _concat_all TEXT);
+        """
+        c.execute(sql)
+        c.execute("INSERT INTO fts_target SELECT  unique_id, concat_all FROM df")
+        self.conn.commit()
+        c.close()
+        logger.debug("Created FTS table")
+
+    def index_unique_id(self):
+        c = self.conn.cursor()
+        logger.debug("Starting to index unique_id field")
+        sql = """
+            CREATE INDEX df_unique_id_idx ON df (unique_id);
+            """
+        c.execute(sql)
+        self.conn.commit()
+        c.close()
+        logger.debug("Unique_id field indexing completed")
+
+    def build_or_replace_stats_tables(self):
+        self.create_or_replace_token_stats_tables()
+        self.create_or_replace_fts_table()
+        self.index_unique_id()
+
+    def clean_and_optimise_database(self):
+
+        rec = self.example_record
+        columns = rec.columns_except_unique_id
+
+        c = self.conn.cursor()
+
+        logger.debug("Dropping raw tokens tables")
+
+        for col in columns:
+            logger.debug(f"Starting dropping table {col}")
+            c.execute(f"""DROP TABLE IF EXISTS {col}_raw_tokens""")
+            self.conn.commit()
+
+        logger.debug("Starting database vacuum")
+        c.execute("""vacuum""")
+        self.conn.commit()
+        c.close()
+        logger.debug("Completed database vacuum")
