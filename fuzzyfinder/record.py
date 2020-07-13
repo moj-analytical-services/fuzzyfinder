@@ -4,6 +4,7 @@ import re
 
 from metaphone import doublemetaphone
 
+
 class Record:
     """ Represents a row of a dataset.
 
@@ -40,6 +41,11 @@ class Record:
     @property
     def id(self):
         return self.record_dict[self.unique_id_col]
+
+    @property
+    def columns_except_unique_id(self):
+        cols = self.record_dict.keys()
+        return [c for c in cols if c != self.unique_id_col]
 
     @staticmethod
     @lru_cache(maxsize=int(1e6))
@@ -100,8 +106,8 @@ class Record:
 
     @property
     def tokenised_including_mispellings(self):
-        tfd = self.tokenised_field_dict
-        tfdm = self.tokenised_misspelling_dict
+        tfd = self.tokenised
+        tfdm = self.tokenised_misspellings
         for col in tfd:
             tfd[col] = tfd[col] + tfdm[col]
         return tfd
