@@ -1,7 +1,7 @@
 from copy import deepcopy
 from functools import lru_cache
 import re
-
+import sqlite3
 from metaphone import doublemetaphone
 
 
@@ -21,15 +21,22 @@ class Record:
     Records will be members of Python sets, so contains a method to make sure the record can be hashed.
     """
 
-    def __init__(self, record_dict: dict, unique_id_col: str = "unique_id"):
+    def __init__(
+        self,
+        record_dict: dict,
+        sqlite_db_conn: sqlite3.Connection = None,
+        unique_id_col: str = "unique_id",
+    ):
         """
         Args:
             record_dict (dict): A row of data represented as a dictionary with colnames as keys and col values as values
+            sqlite_db_conn (sqlie3.Connection):  A connection to a sqlite database that contains column statistics
             unique_id_col (str, optional): The column that contains the unique record identifier.
                 Defaults to "unique_id".
         """
 
         self.record_dict = deepcopy(record_dict)
+        self.conn = sqlite_db_conn
         self.unique_id_col = unique_id_col
 
     def __hash__(self):
@@ -126,5 +133,55 @@ class Record:
             all_tokens.extend(col_tokens)
         return " ".join(all_tokens)
 
+    @property
+    @lru_cache(maxsize=int(1e6))
+    def token_probabilities(self):
+
+        tfd = self.tokenised_including_mispellings
+
+        tfdp = {}
+
+        tokens = []
+        for col, tokens in tfd.items():
+            tfdp[col] = {}
+            for token in tokens:
+                value = get_token_proportion(token, col, self.conn)
+                tfdp[col][token] = value
+
+        return tfdp
+
+    @property
+    def tokens_in_order_of_rarity(self):
+        tfdp = self.token_probabilities
+        token_list = []
+        for col in tfdp.keys():
+            for v in tfdp[col].values():
+                token_list.append(v)
+
+        token_list.sort(key=lambda x: x["proportion"])
+        return tuple([t["token"] for t in token_list])
+
     def __repr__(self):
         return f"Record: {self.record_dict.__repr__()}."
+
+
+@lru_cache(maxsize=int(1e6))
+def get_token_proportion(token, column, conn):
+    c = conn.cursor()
+    sql = f"""
+    select token_proportion
+    from {column}_token_proportions
+    where token = "{token}"
+    """
+
+    c.execute(sql)
+    d = c.fetchone()
+    c.close()
+
+    if not d:
+        # If the token NEVER appears in the search database, 'deprioritise' it in searches
+        value = {"token": token, "proportion": 1}
+    else:
+        value = {"token": token, "proportion": d["token_proportion"]}
+
+    return value

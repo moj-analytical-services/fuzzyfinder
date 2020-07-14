@@ -191,11 +191,13 @@ class SearchDatabaseBuilder:
         # Create FTS
         c.execute("""DROP TABLE IF EXISTS fts_target""")
         sql = """
-        CREAT VIRTUAL TABLE fts_target
-        USING fts4(unique_id TEXT, _concat_all TEXT);
+        CREATE VIRTUAL TABLE fts_target
+        USING fts5(unique_id, concat_all);
         """
         c.execute(sql)
-        c.execute("INSERT INTO fts_target SELECT  unique_id, concat_all FROM df")
+        c.execute(
+            "INSERT INTO fts_target(unique_id, concat_all) SELECT unique_id, concat_all FROM df"
+        )
         self.conn.commit()
         c.close()
         logger.debug("Created FTS table")
