@@ -67,13 +67,17 @@ class Record:
 
         value = value.upper()
 
-        value = value.replace("'", " ")
-        value = re.sub(r"[^\w\s]", " ", value)
         value = re.sub(r"\s{2,100}", " ", value)
-        value = value.strip()
-
+        value = re.sub(r"[^\w\s]", " ", value)  # Any punctuation becomes a space
+        value = re.sub(
+            r"([A-Z])(\d)", r"\1 \2", value
+        )  # Tokenise at word boundary between char and num
+        value = re.sub(r"(\d)([A-Z])", r"\1 \2", value)  # Vice versa
         # Bad idea?  Split up into words of max length 8
         value = re.sub(r"(\w{8})", r"\1 ", value)
+        value = re.sub(r"\s{2,100}", " ", value)
+
+        value = value.strip()
 
         return value.split(" ")
 
@@ -84,22 +88,24 @@ class Record:
         record_tokenised = {}
         for col, value in self.record_dict.items():
             if col != self.unique_id_col:
-                record_tokenised[col] = self.tokenise_value(value)
+                record_tokenised[col] = Record.tokenise_value(value)
         return record_tokenised
 
     @staticmethod
     @lru_cache(maxsize=int(1e6))
     def get_dmetaphone_tokens(token):
-        misspellings = doublemetaphone(token)
-        misspellings = [t for t in misspellings if t != ""]
+        if len(token) > 2 and not any(i.isdigit() for i in token):
+            misspellings = doublemetaphone(token)
+            misspellings = [t for t in misspellings if t != ""]
+        else:
+            misspellings = []
         return misspellings
 
     @staticmethod
     def tokens_to_misspelling_tokens(tokens: list):
         misspelling_tokens = []
         for t in tokens:
-            if len(t) > 2 and not any(i.isdigit() for i in t):
-                misspelling_tokens.extend(Record.get_dmetaphone_tokens(t))
+            misspelling_tokens.extend(Record.get_dmetaphone_tokens(t))
         return misspelling_tokens
 
     @property

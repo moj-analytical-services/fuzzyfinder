@@ -42,7 +42,8 @@ class MatchFinder:
         try:
             import pandas as pd
 
-            return pd.DataFrame(self.found_records.values())
+            df = pd.DataFrame(self.found_records.values())
+            return df.sort_values("score", ascending=False)
         except ModuleNotFoundError:
             raise ModuleNotFoundError(
                 "You've asked for the results as a pandas dataframe but pandas is not installed"
@@ -61,6 +62,8 @@ class MatchFinder:
                 return None
             strategy()
             logger.debug(f"Total searches executed so far: {self.number_of_searches}")
+        logger.info(f"Total records found: {len(self.found_records.keys())}")
+        logger.info(f"Total searches executed: {self.number_of_searches}")
 
     def add_record_if_not_exists(self, r):
         rec_id = r["unique_id"]
@@ -125,8 +128,11 @@ class MatchFinder:
         results = cur.fetchall()
         num_results = len(results)
 
-        for r in results:
-            self.add_record_if_not_exists(r)
+        if (
+            num_results < self.return_records_limit
+        ):  # If query hit results limit then results unlikely to be useful
+            for r in results:
+                self.add_record_if_not_exists(r)
 
         num_ids_after = len(self.found_records.keys())
         num_new = num_ids_after - num_ids_before
@@ -157,7 +163,7 @@ class MatchFinder:
         [c,d]
         [d]
         """
-        logger.info("Starting specific to general all tokens search")
+        logger.debug("Starting specific to general all tokens search")
 
         num_found_records_old = len(self.found_records.keys())
 
@@ -171,7 +177,7 @@ class MatchFinder:
 
         num_found_records_new = len(self.found_records.keys())
         num_new = num_found_records_new - num_found_records_old
-        logger.info(f"{num_new} new matches found")
+        logger.debug(f"{num_new} new matches found")
 
     def _search_specific_to_general_band(self):
         """
@@ -188,7 +194,7 @@ class MatchFinder:
         [d]
         """
 
-        logger.info("Starting specific to general band search")
+        logger.debug("Starting specific to general band search")
 
         num_found_records_old = len(self.found_records.keys())
 
@@ -212,11 +218,11 @@ class MatchFinder:
 
         num_found_records_new = len(self.found_records.keys())
         num_new = num_found_records_new - num_found_records_old
-        logger.info(f"{num_new} new matches found")
+        logger.debug(f"{num_new} new matches found")
 
     def _search_random(self):
 
-        logger.info("Starting specific to general band search")
+        logger.debug("Starting random search")
 
         num_found_records_old = len(self.found_records.keys())
 
@@ -233,7 +239,7 @@ class MatchFinder:
 
         num_found_records_new = len(self.found_records.keys())
         num_new = num_found_records_new - num_found_records_old
-        logger.info(f"{num_new} new matches found")
+        logger.debug(f"{num_new} new matches found")
 
     def _get_random_tokens(self, tokens):
         num_tokens = len(tokens)

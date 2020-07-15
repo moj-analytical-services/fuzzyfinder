@@ -37,6 +37,8 @@ class SearchDatabaseBuilder:
         if not self._table_df_is_empty:
             self.set_example_record_from_db()
 
+        self._records_written_counter = 0
+
     @property
     def _table_df_exists(self):
         c = self.conn.cursor()
@@ -128,6 +130,8 @@ class SearchDatabaseBuilder:
             c.close()
             return None
 
+        self._records_written_counter += 1
+
         tfd = record.tokenised_including_mispellings
 
         columns = record.columns_except_unique_id
@@ -137,16 +141,20 @@ class SearchDatabaseBuilder:
                 c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)", (t,))
         c.close()
 
+    def write_record(self, record: Record):
+
+        self._write_record_no_commit(record)
+
+        if self._records_written_counter % 10000 == 0:
+            logger.info(f"Records written: {self._records_written_counter }")
+            self.conn.commit()
+
     def write_records(self, records: list):
-        # In batches of 1000
-        counter = 0
+
         for r in records:
-            self._write_record_no_commit(r)
-            counter += 1
-            if counter % 1000 == 0:
-                logger.debug(f"Records written: {counter}")
-                self.conn.commit()
+            self.write_record(r)
         self.conn.commit()
+        logger.info(f"Records written: {self._records_written_counter }")
 
     def set_example_record_from_db(self):
         c = self.conn.cursor()
@@ -157,6 +165,15 @@ class SearchDatabaseBuilder:
         record = record["original_record"]
         record = json.loads(record)
         self.example_record = Record(record)
+
+    def write_pandas_dataframe(self, pd_df, unique_id_col: str = "unique_id"):
+
+        for d in pd_df.to_dict(orient="records"):
+            rec = Record(d)
+            self.write_record(rec)
+
+        self.conn.commit()
+        logger.debug(f"Records written: {self._records_written_counter }")
 
     def create_or_replace_token_stats_tables(self):
         rec = self.example_record

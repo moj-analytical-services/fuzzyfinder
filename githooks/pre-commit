@@ -5,13 +5,13 @@
 # run Black on all .py files
 printf "\n\e[1mRunning Black Python code formatter\e[0m\n"
 hash black 2>/dev/null || { echo >&2 "Black not installed in this environment. Halting commit."; exit 1; }
-black . --check
+black fuzzyfinder/ --check
 black_exit=$?
 
 # run flake8 on all .py files
 printf "\n\e[1mRunning flake8 Python linter\e[0m\n"
 hash flake8 2>/dev/null || { echo >&2 "flake8 not installed in this environment. Halting commit."; exit 1; }
-flake8 . --count
+flake8 fuzzyfinder/ --count
 flake_exit=$?
 
 

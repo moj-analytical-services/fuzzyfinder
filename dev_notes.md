@@ -82,3 +82,7 @@ match_getter = MatchGetter(record, SearchDatabase)
 matches = get_scored__matches(record, SearchDatabase, as_pd = True)
 
 
+## Places where need to check hitting cache:
+
+-  comparison.get_token_proportion
+-
