@@ -1,17 +1,36 @@
 # fuzzyfinder
 
+Given a large table of records, fuzzy search for a record, and return a table of potential matches, with a match score
 
-## Formatting and linting configs
-Config changes for flake8 go in .flake8. Our standard settings include:
-- max line length to 88 to match team's preference (and Black default)
-- ignore rule E203 which doesn't quite match PEP8 on spacing around colons (and conflicts with Black)
-- ignore some folders like venv and .github
 
-Config changes for Black should go in `pyproject.toml`. Our standard settings make no changes from default.
+First build a database of your records.  If you provide a path, the db is persisted to disk.  Otherwise it's in-memory:
+```python
+from fuzzyfinder.database import SearchDatabaseBuilder
+db = SearchDatabaseBuilder()
+```
 
-Config changes for yamllint should go in `.yamllint`.
+Add some records:
 
-Our standard settings use the default for both of these, so at the moment those configs make no changes.  
+```python
+df = pd.read_csv('mytable.csv')
+db.write_pandas_dataframe(df_to_write)
+```
 
-## Licence
-[MIT Licence](LICENCE.md)
+Once you've finished adding records, optimise the database for search:
+
+
+```python
+db.build_or_replace_stats_tables()
+db.clean_and_optimise_database()
+```
+
+Now you can serach for potential matches
+
+```python
+search_dict = {"first_name": "john", "surname": "smith"}
+search_rec = Record(search_dict, db.conn)
+inder = MatchFinder(search_dict, db.conn, return_records_limit=50)
+finder.find_potential_matches()
+finder.found_records_as_df
+```
+
