@@ -24,7 +24,7 @@ db.build_or_replace_stats_tables()
 db.clean_and_optimise_database()
 ```
 
-Now you can serach for potential matches
+Now you can serach for potential matches:
 
 ```python
 search_dict = {"first_name": "john", "surname": "smith"}
