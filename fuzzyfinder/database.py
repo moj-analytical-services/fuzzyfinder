@@ -2,6 +2,7 @@ import json
 import sqlite3
 from multiprocessing import Pool
 from functools import partial
+from collections import Counter
 
 from .utils import dict_factory
 from .record import Record
@@ -104,9 +105,14 @@ class SearchDatabaseBuilder:
         c = self.conn.cursor()
         for col in columns:
             sql = f"""
-                    CREATE TABLE {col}_raw_tokens
-                    (token text)
+                    CREATE TABLE {col}_token_counts
+                    (token text, token_count int, token_prop float)
                    """
+            c.execute(sql)
+
+            sql = f"""
+            CREATE INDEX {col}_token_proportions_idx ON {col}_token_counts (token);
+            """
             c.execute(sql)
         c.close()
 
@@ -115,106 +121,80 @@ class SearchDatabaseBuilder:
         if self._table_df_is_empty:
             self.initialise_token_tables()
 
-    def _write_record_no_commit(self, record: Record, conn=None):
-        # Do not want to commit after every write because it slows things down too much
+    @staticmethod
+    def _record_dict_to_insert_data(record_dict: dict):
 
-        # Want to avoid user explicity having to pass an example record in on __init__
-        # Instead, we set up the databse when we first see a record
-        if not conn:
-            conn = self.conn
+        record = Record(record_dict)
+        uid = record.id
+        jsond = json.dumps(record.record_dict)
+        concat = record.tokenised_stringified_with_misspellings
+
+        df_tuple = (uid, jsond, concat)
+
+
+
+        columns = record.columns_except_unique_id
+        tfd = record.tokenised_including_mispellings
+
+        col_token_counts = {}
+        for col in columns:
+            tokens = tfd[col]
+            col_counter = Counter()
+            col_counter.update(tokens)
+            col_token_counts[col] = col_counter
+
+        return {'df_tuple': df_tuple, 'col_token_counts': col_token_counts}
+
+
+
+    def write_list_dicts_parallel(self, list_dicts:list):
+
 
         if self.example_record is None:
+            record = Record(list_dicts[0])
             self.set_example_record(record)
 
-        uid = record.id
-        jsond = json.dumps(record.record_dict)
-        concat = record.tokenised_stringified_with_misspellings
-
-        c = self.conn.cursor()
-
-        try:
-            c.execute("INSERT INTO df VALUES (?, ?, ?)", (uid, jsond, concat))
-        except sqlite3.IntegrityError:
-            logger.debug(f"Record id {uid} already exists in db, ignoring")
-            c.close()
-            return None
-
-        self._records_written_counter += 1
-
-        tfd = record.tokenised_including_mispellings
-
-        columns = record.columns_except_unique_id
-        for col in columns:
-            tokens = tfd[col]
-            for t in tokens:
-                c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)", (t,))
-        c.close()
-
-    @staticmethod
-    def _write_record_no_commit_parallel(record: Record, conn):
-
-        uid = record.id
-        jsond = json.dumps(record.record_dict)
-        concat = record.tokenised_stringified_with_misspellings
-
-        c = conn.cursor()
-
-        try:
-            c.execute("INSERT INTO df VALUES (?, ?, ?)", (uid, jsond, concat))
-        except sqlite3.IntegrityError:
-            c.close()
-            return None
-
-        tfd = record.tokenised_including_mispellings
-
-        columns = record.columns_except_unique_id
-        for col in columns:
-            tokens = tfd[col]
-            for t in tokens:
-                c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)", (t,))
-        c.close()
-
-    def write_record(self, record: Record):
-
-        self._write_record_no_commit(record)
-
-        if self._records_written_counter % 10000 == 0:
-            logger.info(f"Records written: {self._records_written_counter }")
-            self.conn.commit()
-
-    def write_records(self, records: list):
-
-        for r in records:
-            self.write_record(r)
-        self.conn.commit()
-        logger.info(f"Records written: {self._records_written_counter }")
-
-    @staticmethod
-    def write_batch_of_dicts(dicts, db_filename):
-
-        conn = sqlite3.connect(db_filename, timeout=60)
-
-        for d in dicts:
-            r = Record(d)
-            SearchDatabaseBuilder._write_record_no_commit_parallel(r, conn)
-        conn.commit()
-
-        conn.close()
-
-
-
-    def write_list_dicts_parallel(self, list_dicts:list, batch_size = 10000):
-        import multiprocessing
-        print(multiprocessing.cpu_count())
-        batches = chunk_list(list_dicts, batch_size)
-
-        fn = partial(self.write_batch_of_dicts, db_filename=self.db_filename)
-
         p = Pool()
-        p.map(fn, batches)
+        fn = self._record_dict_to_insert_data
+        results = p.map(fn, list_dicts, chunksize=1000)
+
         p.close()
         p.join()
 
+        col_token_counts = {}
+        columns = record.columns_except_unique_id
+        for col in columns:
+            col_token_counts[col] = Counter()
+
+        c = self.conn.cursor()
+        for r in results:
+            insert_tuple = r['df_tuple']
+            try:
+                c.execute("INSERT INTO df VALUES (?, ?, ?)", insert_tuple)
+            except sqlite3.IntegrityError:
+                logger.debug(f"Record id {insert_tuple[0]} already exists in db, ignoring")
+                return None
+
+            counter_dict = r['col_token_counts']
+            for col in columns:
+                col_token_counts[col].update(counter_dict[col])
+
+        # sql creates or updates key
+        for col in columns:
+            for token, value in col_token_counts[col].items():
+
+                sql = f"""
+                    INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
+                """
+                c.execute(sql, (token, value, None))
+
+                sql = f"""
+                UPDATE {col}_token_counts SET token_count = token_count + {value}
+                    WHERE token = '{token}';
+                """
+                c.execute(sql)
+
+        c.close()
 
 
     def set_example_record_from_db(self):
@@ -317,7 +297,9 @@ class SearchDatabaseBuilder:
         logger.debug("Completed database vacuum")
 
 
-def chunk_list(lst, n):
-    """Yield successive n-sized chunks from lst."""
-    for i in range(0, len(lst), n):
-        yield lst[i:i + n]
+# def chunk_list(lst, n):
+#     """Yield successive n-sized chunks from lst."""
+#     for i in range(0, len(lst), n):
+#         yield lst[i:i + n]
+
+
