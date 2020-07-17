@@ -1,5 +1,7 @@
 import json
 import sqlite3
+from multiprocessing import Pool
+from functools import partial
 
 from .utils import dict_factory
 from .record import Record
@@ -7,6 +9,10 @@ from .record import Record
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+
+
 
 
 class SearchDatabaseBuilder:
@@ -23,7 +29,7 @@ class SearchDatabaseBuilder:
 
         if not db_filename:
             db_filename = ":memory:"
-
+        self.db_filename = db_filename
         self.conn = sqlite3.connect(db_filename)
 
         # The connection will 'render' query results as list of dicts
@@ -109,11 +115,14 @@ class SearchDatabaseBuilder:
         if self._table_df_is_empty:
             self.initialise_token_tables()
 
-    def _write_record_no_commit(self, record: Record):
+    def _write_record_no_commit(self, record: Record, conn=None):
         # Do not want to commit after every write because it slows things down too much
 
         # Want to avoid user explicity having to pass an example record in on __init__
         # Instead, we set up the databse when we first see a record
+        if not conn:
+            conn = self.conn
+
         if self.example_record is None:
             self.set_example_record(record)
 
@@ -141,6 +150,30 @@ class SearchDatabaseBuilder:
                 c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)", (t,))
         c.close()
 
+    @staticmethod
+    def _write_record_no_commit_parallel(record: Record, conn):
+
+        uid = record.id
+        jsond = json.dumps(record.record_dict)
+        concat = record.tokenised_stringified_with_misspellings
+
+        c = conn.cursor()
+
+        try:
+            c.execute("INSERT INTO df VALUES (?, ?, ?)", (uid, jsond, concat))
+        except sqlite3.IntegrityError:
+            c.close()
+            return None
+
+        tfd = record.tokenised_including_mispellings
+
+        columns = record.columns_except_unique_id
+        for col in columns:
+            tokens = tfd[col]
+            for t in tokens:
+                c.execute(f"INSERT INTO {col}_raw_tokens VALUES (?)", (t,))
+        c.close()
+
     def write_record(self, record: Record):
 
         self._write_record_no_commit(record)
@@ -156,6 +189,34 @@ class SearchDatabaseBuilder:
         self.conn.commit()
         logger.info(f"Records written: {self._records_written_counter }")
 
+    @staticmethod
+    def write_batch_of_dicts(dicts, db_filename):
+
+        conn = sqlite3.connect(db_filename, timeout=60)
+
+        for d in dicts:
+            r = Record(d)
+            SearchDatabaseBuilder._write_record_no_commit_parallel(r, conn)
+        conn.commit()
+
+        conn.close()
+
+
+
+    def write_list_dicts_parallel(self, list_dicts:list, batch_size = 10000):
+        import multiprocessing
+        print(multiprocessing.cpu_count())
+        batches = chunk_list(list_dicts, batch_size)
+
+        fn = partial(self.write_batch_of_dicts, db_filename=self.db_filename)
+
+        p = Pool()
+        p.map(fn, batches)
+        p.close()
+        p.join()
+
+
+
     def set_example_record_from_db(self):
         c = self.conn.cursor()
 
@@ -168,11 +229,11 @@ class SearchDatabaseBuilder:
 
     def write_pandas_dataframe(self, pd_df, unique_id_col: str = "unique_id"):
 
-        for d in pd_df.to_dict(orient="records"):
-            rec = Record(d)
-            self.write_record(rec)
+        records_as_dict = pd_df.to_dict(orient="records")
+        self.set_example_record(Record(records_as_dict[0]))
 
-        self.conn.commit()
+        self.write_list_dicts_parallel(records_as_dict)
+
         logger.debug(f"Records written: {self._records_written_counter }")
 
     def create_or_replace_token_stats_tables(self):
@@ -254,3 +315,9 @@ class SearchDatabaseBuilder:
         self.conn.commit()
         c.close()
         logger.debug("Completed database vacuum")
+
+
+def chunk_list(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
