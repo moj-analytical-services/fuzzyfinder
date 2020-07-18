@@ -106,7 +106,7 @@ class SearchDatabaseBuilder:
         for col in columns:
             sql = f"""
                     CREATE TABLE {col}_token_counts
-                    (token text, token_count int, token_prop float)
+                    (token text, token_count int, token_proportion float)
                    """
             c.execute(sql)
 
@@ -226,21 +226,14 @@ class SearchDatabaseBuilder:
 
             logger.debug(f"Creating table {col}_token_proportions")
             sql = f"""
-            create table {col}_token_proportions as
-            select token, cast(count(*) as float)/(select count(*) from {col}_raw_tokens) as token_proportion
-            from {col}_raw_tokens
-            group by token
+            update  {col}_token_counts
+            set token_proportion = (select token_count/count(*) from {col}_token_counts)
             """
             c.execute(sql)
             self.conn.commit()
             logger.debug(f"Created table {col}_token_proportions.  Indexing...")
 
-            sql = f"""
-            CREATE INDEX {col}_token_proportions_idx ON {col}_token_proportions (token);
-            """
-            c.execute(sql)
-            self.conn.commit()
-            logger.debug(f"Indexed table {col}_token_proportions")
+
         c.close()
 
     def create_or_replace_fts_table(self):
@@ -275,26 +268,6 @@ class SearchDatabaseBuilder:
         self.create_or_replace_token_stats_tables()
         self.create_or_replace_fts_table()
         self.index_unique_id()
-
-    def clean_and_optimise_database(self):
-
-        rec = self.example_record
-        columns = rec.columns_except_unique_id
-
-        c = self.conn.cursor()
-
-        logger.debug("Dropping raw tokens tables")
-
-        for col in columns:
-            logger.debug(f"Starting dropping table {col}")
-            c.execute(f"""DROP TABLE IF EXISTS {col}_raw_tokens""")
-            self.conn.commit()
-
-        logger.debug("Starting database vacuum")
-        c.execute("""vacuum""")
-        self.conn.commit()
-        c.close()
-        logger.debug("Completed database vacuum")
 
 
 # def chunk_list(lst, n):
