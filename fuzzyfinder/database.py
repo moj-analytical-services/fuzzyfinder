@@ -1,20 +1,14 @@
-import json
-import sqlite3
-from multiprocessing import Pool
-from functools import partial
 from collections import Counter
-
-from .utils import dict_factory
-from .record import Record
-
+from functools import partial
+from multiprocessing import Pool
+import json
 import logging
+import sqlite3
+
+from .record import Record
+from .utils import dict_factory
 
 logger = logging.getLogger(__name__)
-
-
-
-
-
 
 class SearchDatabaseBuilder:
     """Create and populate a SQLite database
@@ -33,7 +27,7 @@ class SearchDatabaseBuilder:
         self.db_filename = db_filename
         self.conn = sqlite3.connect(db_filename)
 
-        # The connection will 'render' query results as list of dicts
+        # The connection will render query results as list of dicts
         self.conn.row_factory = dict_factory
 
         if not self._table_df_exists:
@@ -121,25 +115,17 @@ class SearchDatabaseBuilder:
         if self._table_df_is_empty:
             self.initialise_token_tables()
 
-
-    @staticmethod
-    def _record_batch_to_insert_data(record_dicts:list):
-        results = {"result_tuples": [], "col_token_counts": {}}
-        for rd in record_dicts:
-            results_dict = SearchDatabaseBuilder._record_dict_to_insert_data(rd)
-            rt = results_dict['df_tuple']
-            results['result_tuples'].append(rt)
-            tc = results_dict['col_token_counts']
-            for col in tc:
-                if col in results["col_token_counts"]:
-                    results["col_token_counts"][col].update(tc[col])
-                else:
-                    results["col_token_counts"][col] = tc[col]
-
-        return results
-
     @staticmethod
     def _record_dict_to_insert_data(record_dict: dict):
+        """Process a single record dict into data reaady to be entered into the database
+
+        Args:
+            record_dict (dict): A dictionary representing a record
+
+        Returns:
+            dict: A dictionary containing the tuple needed for an INSERT statmenent, and
+                  'col_token_counts' a dictionary of Counters(), one for each column, containing token counts
+        """
 
         record = Record(record_dict)
         uid = record.id
@@ -160,27 +146,61 @@ class SearchDatabaseBuilder:
 
         return {'df_tuple': df_tuple, 'col_token_counts': col_token_counts}
 
+    @staticmethod
+    def _record_batch_to_insert_data(record_dicts:list):
+        """Process a list of record dictionaries into data ready to be entered into the database.
+
+        Args:
+            record_dicts (list): A list of dictionaries representing records
+
+        Returns:
+            dict: A dict containing 'result_tuples', a list of tuples ready to insert into the table df and
+                  'col_token_counts' a dict of Counters(), one for each column, containing aggregated token counts
+        """
+        results = {"result_tuples": [], "col_token_counts": {}}
+        for rd in record_dicts:
+            results_dict = SearchDatabaseBuilder._record_dict_to_insert_data(rd)
+            rt = results_dict['df_tuple']
+            results['result_tuples'].append(rt)
+            tc = results_dict['col_token_counts']
+            for col in tc:
+                if col in results["col_token_counts"]:
+                    results["col_token_counts"][col].update(tc[col])
+                else:
+                    results["col_token_counts"][col] = tc[col]
+
+        return results
 
     def write_list_dicts_parallel(self, list_dicts:list, batch_size=10000):
-        from datetime import datetime
-        startTime = datetime.now()
+        """Process a list of dicts containing records in parallel, turning them into data ready to be inserted
+        into the databse
+
+        Args:
+            list_dicts (list): A list of dictionaries, each one representing a record
+            batch_size (int, optional): How many records to send to each parallel worker. Defaults to 10000.
+        """
 
         record = Record(list_dicts[0])
         if self.example_record is None:
             self.set_example_record(record)
+
+
+
+        batches_of_records = chunk_list(list_dicts, batch_size)
+
+        ##########################
+        # Start of parallelisation
+        ##########################
+        p = Pool()
+        fn = self._record_batch_to_insert_data
+        results_batches = p.imap(fn, batches_of_records)
+        c = self.conn.cursor()
 
         # Initialise one counter per column to store token counts
         col_token_counts = {}
         columns = record.columns_except_unique_id
         for col in columns:
             col_token_counts[col] = Counter()
-
-        batches_of_records = chunk_list(list_dicts, batch_size)
-
-        p = Pool()
-        fn = self._record_batch_to_insert_data
-        results_batches = p.imap(fn, batches_of_records)
-        c = self.conn.cursor()
 
         # Since it's an imap, which results in a generator
         # this might start executing before the final batch completes?
@@ -195,10 +215,12 @@ class SearchDatabaseBuilder:
             for col in columns:
                 col_token_counts[col].update(column_counters[col])
 
-
         p.close()
         p.join()
-        print(datetime.now() - startTime)
+
+        ##########################
+        # End of parallelisation
+        ##########################
 
         # sql creates or updates key
         for col in columns:
