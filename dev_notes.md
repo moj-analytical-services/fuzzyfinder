@@ -85,4 +85,22 @@ matches = get_scored__matches(record, SearchDatabase, as_pd = True)
 ## Places where need to check hitting cache:
 
 -  comparison.get_token_proportion
--
+
+
+## Timings:
+
+`fake_1m.parquet` non parallel write db to `delete.db`, build stats optimise and vacuum:
+0:02:19.547663
+
+`fake_1m.parquet` parallel write db to `delete.db`
+1:25.80
+
+Takes about 17 seconds to turn coutners into single counter
+
+To do next:
+
+The genreator with executemany works well.
+
+Repeat with the counters.
+
+Need to write a map function for the counters that parallelises the reduce.

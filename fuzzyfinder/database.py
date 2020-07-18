@@ -131,8 +131,6 @@ class SearchDatabaseBuilder:
 
         df_tuple = (uid, jsond, concat)
 
-
-
         columns = record.columns_except_unique_id
         tfd = record.tokenised_including_mispellings
 
@@ -143,58 +141,73 @@ class SearchDatabaseBuilder:
             col_counter.update(tokens)
             col_token_counts[col] = col_counter
 
-        return {'df_tuple': df_tuple, 'col_token_counts': col_token_counts}
-
+        # return {'df_tuple': df_tuple, 'col_token_counts': col_token_counts}
+        return df_tuple
 
 
     def write_list_dicts_parallel(self, list_dicts:list):
+        from datetime import datetime
+        startTime = datetime.now()
 
-
+        record = Record(list_dicts[0])
         if self.example_record is None:
-            record = Record(list_dicts[0])
             self.set_example_record(record)
-
-        p = Pool()
-        fn = self._record_dict_to_insert_data
-        results = p.map(fn, list_dicts, chunksize=1000)
-
-        p.close()
-        p.join()
 
         col_token_counts = {}
         columns = record.columns_except_unique_id
         for col in columns:
             col_token_counts[col] = Counter()
 
+
+        p = Pool()
+        fn = self._record_dict_to_insert_data
+        results = p.imap(fn, list_dicts, chunksize=1000)
         c = self.conn.cursor()
-        for r in results:
-            insert_tuple = r['df_tuple']
-            try:
-                c.execute("INSERT INTO df VALUES (?, ?, ?)", insert_tuple)
-            except sqlite3.IntegrityError:
-                logger.debug(f"Record id {insert_tuple[0]} already exists in db, ignoring")
-                return None
 
-            counter_dict = r['col_token_counts']
-            for col in columns:
-                col_token_counts[col].update(counter_dict[col])
+        # Since it's an imap, which results in a generator
+        # this might start executing before the final batch completes?
+        try:
+            c.executemany("INSERT INTO df VALUES (?, ?, ?)", results)
+        except sqlite3.IntegrityError as exc:
+            logger.debug(f"{exc}")
 
-        # sql creates or updates key
-        for col in columns:
-            for token, value in col_token_counts[col].items():
 
-                sql = f"""
-                    INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
-                """
-                c.execute(sql, (token, value, None))
+        # for r in results:
+        #     insert_tuple = r['df_tuple']
+        #     if first:
+        #         print(datetime.now() - startTime)
+        #         first = False
+        #     try:
+        #         c.execute("INSERT INTO df VALUES (?, ?, ?)", insert_tuple)
+        #     except sqlite3.IntegrityError:
+        #         logger.debug(f"Record id {insert_tuple[0]} already exists in db, ignoring")
+        #         return None
 
-                sql = f"""
-                UPDATE {col}_token_counts SET token_count = token_count + {value}
-                    WHERE token = '{token}';
-                """
-                c.execute(sql)
+        #     counter_dict = r['col_token_counts']
+        #     for col in columns:
+        #         col_token_counts[col].update(counter_dict[col])
+
+        p.close()
+        p.join()
+        print(datetime.now() - startTime)
+
+        # # sql creates or updates key
+        # for col in columns:
+        #     for token, value in col_token_counts[col].items():
+
+        #         sql = f"""
+        #             INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
+        #         """
+        #         c.execute(sql, (token, value, None))
+
+        #         sql = f"""
+        #         UPDATE {col}_token_counts SET token_count = token_count + {value}
+        #             WHERE token = '{token}';
+        #         """
+        #         c.execute(sql)
 
         c.close()
+        self.conn.commit()
 
 
     def set_example_record_from_db(self):
