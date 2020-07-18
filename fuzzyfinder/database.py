@@ -121,6 +121,23 @@ class SearchDatabaseBuilder:
         if self._table_df_is_empty:
             self.initialise_token_tables()
 
+
+    @staticmethod
+    def _record_batch_to_insert_data(record_dicts:list):
+        results = {"result_tuples": [], "col_token_counts": {}}
+        for rd in record_dicts:
+            results_dict = SearchDatabaseBuilder._record_dict_to_insert_data(rd)
+            rt = results_dict['df_tuple']
+            results['result_tuples'].append(rt)
+            tc = results_dict['col_token_counts']
+            for col in tc:
+                if col in results["col_token_counts"]:
+                    results["col_token_counts"][col].update(tc[col])
+                else:
+                    results["col_token_counts"][col] = tc[col]
+
+        return results
+
     @staticmethod
     def _record_dict_to_insert_data(record_dict: dict):
 
@@ -141,11 +158,10 @@ class SearchDatabaseBuilder:
             col_counter.update(tokens)
             col_token_counts[col] = col_counter
 
-        # return {'df_tuple': df_tuple, 'col_token_counts': col_token_counts}
-        return df_tuple
+        return {'df_tuple': df_tuple, 'col_token_counts': col_token_counts}
 
 
-    def write_list_dicts_parallel(self, list_dicts:list):
+    def write_list_dicts_parallel(self, list_dicts:list, batch_size=10000):
         from datetime import datetime
         startTime = datetime.now()
 
@@ -153,58 +169,51 @@ class SearchDatabaseBuilder:
         if self.example_record is None:
             self.set_example_record(record)
 
+        # Initialise one counter per column to store token counts
         col_token_counts = {}
         columns = record.columns_except_unique_id
         for col in columns:
             col_token_counts[col] = Counter()
 
+        batches_of_records = chunk_list(list_dicts, batch_size)
 
         p = Pool()
-        fn = self._record_dict_to_insert_data
-        results = p.imap(fn, list_dicts, chunksize=1000)
+        fn = self._record_batch_to_insert_data
+        results_batches = p.imap(fn, batches_of_records)
         c = self.conn.cursor()
 
         # Since it's an imap, which results in a generator
         # this might start executing before the final batch completes?
-        try:
-            c.executemany("INSERT INTO df VALUES (?, ?, ?)", results)
-        except sqlite3.IntegrityError as exc:
-            logger.debug(f"{exc}")
+        for results in results_batches:
+            result_tuples = results['result_tuples']
+            try:
+                c.executemany("INSERT INTO df VALUES (?, ?, ?)", result_tuples)
+            except sqlite3.IntegrityError as exc:
+                logger.debug(f"{exc}")
 
+            column_counters = results['col_token_counts']
+            for col in columns:
+                col_token_counts[col].update(column_counters[col])
 
-        # for r in results:
-        #     insert_tuple = r['df_tuple']
-        #     if first:
-        #         print(datetime.now() - startTime)
-        #         first = False
-        #     try:
-        #         c.execute("INSERT INTO df VALUES (?, ?, ?)", insert_tuple)
-        #     except sqlite3.IntegrityError:
-        #         logger.debug(f"Record id {insert_tuple[0]} already exists in db, ignoring")
-        #         return None
-
-        #     counter_dict = r['col_token_counts']
-        #     for col in columns:
-        #         col_token_counts[col].update(counter_dict[col])
 
         p.close()
         p.join()
         print(datetime.now() - startTime)
 
-        # # sql creates or updates key
-        # for col in columns:
-        #     for token, value in col_token_counts[col].items():
+        # sql creates or updates key
+        for col in columns:
+            for token, value in col_token_counts[col].items():
 
-        #         sql = f"""
-        #             INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
-        #         """
-        #         c.execute(sql, (token, value, None))
+                sql = f"""
+                    INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
+                """
+                c.execute(sql, (token, value, None))
 
-        #         sql = f"""
-        #         UPDATE {col}_token_counts SET token_count = token_count + {value}
-        #             WHERE token = '{token}';
-        #         """
-        #         c.execute(sql)
+                sql = f"""
+                UPDATE {col}_token_counts SET token_count = token_count + {value}
+                    WHERE token = '{token}';
+                """
+                c.execute(sql)
 
         c.close()
         self.conn.commit()
@@ -235,9 +244,6 @@ class SearchDatabaseBuilder:
 
         c = self.conn.cursor()
         for col in columns:
-            c.execute(f"""DROP TABLE IF EXISTS {col}_token_proportions""")
-
-            logger.debug(f"Creating table {col}_token_proportions")
             sql = f"""
             update  {col}_token_counts
             set token_proportion = (select token_count/count(*) from {col}_token_counts)
@@ -283,9 +289,9 @@ class SearchDatabaseBuilder:
         self.index_unique_id()
 
 
-# def chunk_list(lst, n):
-#     """Yield successive n-sized chunks from lst."""
-#     for i in range(0, len(lst), n):
-#         yield lst[i:i + n]
+def chunk_list(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 
