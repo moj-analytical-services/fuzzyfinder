@@ -1,5 +1,4 @@
 from collections import Counter
-from functools import partial
 from multiprocessing import Pool
 import json
 
@@ -9,6 +8,7 @@ from .record import Record
 from .utils import dict_factory
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -144,10 +144,10 @@ class SearchDatabaseBuilder:
             tokens = tfd[col]
             column_counters.update_single_column(col, tokens)
 
-        return {'df_tuple': df_tuple, 'column_counters': column_counters}
+        return {"df_tuple": df_tuple, "column_counters": column_counters}
 
     @staticmethod
-    def _record_batch_to_insert_data(record_dicts:list):
+    def _record_batch_to_insert_data(record_dicts: list):
         """Process a list of record dictionaries into data ready to be entered into the database.
 
         Args:
@@ -159,15 +159,19 @@ class SearchDatabaseBuilder:
                   'record_dicts' the original record dictionaries.  Needed in case the batch fails database integrity
                   constraints and records need to be added one by one.
         """
-        results_batch = {"result_tuples": [],
-                    "column_counters": ColumnCounters(Record(record_dicts[0])),
-                    "original_dicts":record_dicts}
+        results_batch = {
+            "result_tuples": [],
+            "column_counters": ColumnCounters(Record(record_dicts[0])),
+            "original_dicts": record_dicts,
+        }
 
         for rd in record_dicts:
-            single_record_results = SearchDatabaseBuilder._record_dict_to_insert_data(rd)
-            rt = single_record_results['df_tuple']
-            results_batch['result_tuples'].append(rt)
-            new_column_counter = single_record_results['column_counters']
+            single_record_results = SearchDatabaseBuilder._record_dict_to_insert_data(
+                rd
+            )
+            rt = single_record_results["df_tuple"]
+            results_batch["result_tuples"].append(rt)
+            new_column_counter = single_record_results["column_counters"]
             results_batch["column_counters"].update(new_column_counter)
 
         return results_batch
@@ -175,44 +179,45 @@ class SearchDatabaseBuilder:
     def bulk_insert_batch(self, results_batch, column_counters):
 
         # See here: https://stackoverflow.com/questions/52912010
-        result_tuples = results_batch['result_tuples']
+        result_tuples = results_batch["result_tuples"]
         c = self.conn.cursor()
 
         try:
             c.executemany("INSERT INTO df VALUES (?, ?, ?)", result_tuples)
         except sqlite3.IntegrityError:
-            c.execute('rollback')
+            c.execute("rollback")
             c.close()
             raise sqlite3.IntegrityError()
         self.conn.commit()
 
         # Passed by reference so can mutate object
         # Note counters only updated if whole transaction completes successfully
-        new_column_counters = results_batch['column_counters']
+        new_column_counters = results_batch["column_counters"]
 
         column_counters.update(new_column_counters)
-
 
     def insert_batch_one_by_one(self, batch, column_counters):
         # If bulk insert failed, we want to insert records one by one
         # logging integrity errors
         # Where integrity checks fail, we do not want to increment counters
-        c  = self.conn.cursor()
+        c = self.conn.cursor()
         for record_dict in batch:
             insert_data = self._record_dict_to_insert_data(record_dict)
-            insert_tuple = insert_data['df_tuple']
+            insert_tuple = insert_data["df_tuple"]
             try:
                 c.execute("INSERT INTO df VALUES (?, ?, ?)", insert_tuple)
             except sqlite3.IntegrityError:
-                logger.debug(f"Record id {insert_tuple[0]} already exists in db, ignoring")
+                logger.debug(
+                    f"Record id {insert_tuple[0]} already exists in db, ignoring"
+                )
                 continue
 
-            new_column_counters = insert_data['column_counters']
+            new_column_counters = insert_data["column_counters"]
             column_counters.update(new_column_counters)
         c.close()
         self.conn.commit()
 
-    def write_list_dicts_parallel(self, list_dicts:list, batch_size=10_000):
+    def write_list_dicts_parallel(self, list_dicts: list, batch_size=10_000):
         """Process a list of dicts containing records in parallel, turning them into data ready to be inserted
         into the databse, then insert
 
@@ -245,7 +250,9 @@ class SearchDatabaseBuilder:
             try:
                 self.bulk_insert_batch(results_batch, column_counters)
             except sqlite3.IntegrityError:
-                self.insert_batch_one_by_one(results_batch['original_dicts'], column_counters)
+                self.insert_batch_one_by_one(
+                    results_batch["original_dicts"], column_counters
+                )
 
         p.close()
         p.join()
@@ -255,7 +262,6 @@ class SearchDatabaseBuilder:
         ##########################
 
         # sql creates or updates key
-
 
         for col in column_counters.columns:
 
@@ -273,7 +279,6 @@ class SearchDatabaseBuilder:
 
         c.close()
         self.conn.commit()
-
 
     def set_example_record_from_db(self):
         c = self.conn.cursor()
@@ -305,7 +310,7 @@ class SearchDatabaseBuilder:
             """
             c.execute(sql)
             self.conn.commit()
-            logger.debug(f"Created table {col}_token_proportions.  Indexing...")
+            logger.debug(f"Updated table {col}_token_counts.")
 
         c.close()
 
@@ -351,7 +356,7 @@ class SearchDatabaseBuilder:
 def chunk_list(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
-        yield lst[i:i + n]
+        yield lst[i : i + n]
 
 
 class ColumnCounters:
@@ -369,7 +374,7 @@ class ColumnCounters:
         self.col_token_counts = col_token_counts
 
     def __getitem__(self, item):
-         return self.col_token_counts[item]
+        return self.col_token_counts[item]
 
     @property
     def columns(self):
