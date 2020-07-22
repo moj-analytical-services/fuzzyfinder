@@ -18,7 +18,7 @@ class SearchDatabaseBuilder:
     that contains the records we want to search within
     """
 
-    def __init__(self, db_filename: str = None):
+    def __init__(self, db_filename: str = None, unique_id_integrity_check=True):
         """
         Args:
             filename (str, optional):  The filename for the database.  If none, the database will be an in-memory
@@ -29,6 +29,7 @@ class SearchDatabaseBuilder:
             db_filename = ":memory:"
         self.db_filename = db_filename
         self.conn = sqlite3.connect(db_filename)
+        self.unique_id_integrity_check = unique_id_integrity_check
 
         # The connection will render query results as list of dicts
         self.conn.row_factory = dict_factory
@@ -87,9 +88,14 @@ class SearchDatabaseBuilder:
     def initialise_db(self):
         c = self.conn.cursor()
 
+        if self.unique_id_integrity_check:
+            integrity_check = "NOT NULL PRIMARY KEY"
+        else:
+            integrity_check = ""
+
         c.execute(
-            """CREATE TABLE df
-                    (unique_id TEXT NOT NULL PRIMARY KEY,
+            f"""CREATE TABLE df
+                    (unique_id TEXT {integrity_check},
                      original_record JSON,
                      concat_all TEXT)
                   """
