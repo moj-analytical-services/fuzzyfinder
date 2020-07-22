@@ -28,7 +28,7 @@ class MatchFinder:
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record"
 
-        self.record = Record(search_dict, self.unique_id_col,  db.conn)
+        self.record = Record(search_dict, self.unique_id_col, db.conn)
 
         self.number_of_searches = 0
         self.return_records_limit = return_records_limit
