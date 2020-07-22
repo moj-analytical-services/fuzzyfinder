@@ -1,6 +1,5 @@
 import tempfile
 import string
-import uuid
 
 from fuzzyfinder.database import SearchDatabaseBuilder
 

@@ -306,7 +306,7 @@ class SearchDatabaseBuilder:
         for col in columns:
             sql = f"""
             update  {col}_token_counts
-            set token_proportion = (select token_count/count(*) from {col}_token_counts)
+            set token_proportion = cast(token_count as float)/(select sum(token_count) from {col}_token_counts)
             """
             c.execute(sql)
             self.conn.commit()
