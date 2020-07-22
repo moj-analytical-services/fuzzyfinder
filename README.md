@@ -1,3 +1,5 @@
+![Test](https://github.com/moj-analytical-services/fuzzyfinder/workflows/Test/badge.svg)
+
 # fuzzyfinder
 
 Given a large table of records, fuzzy search for a record, and return a table of potential matches, with a match score
