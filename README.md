@@ -32,6 +32,5 @@ Now you can serach for potential matches
 ```python
 search_dict = {"first_name": "john", "surname": "smith"}
 db.find_potential_matches_as_pandas(search_dict)
-
 ```
 
