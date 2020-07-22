@@ -6,6 +6,7 @@ from functools import partial
 import sqlite3
 
 from .record import Record
+from .finder import MatchFinder
 from .utils import dict_factory
 
 import logging
@@ -13,7 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class SearchDatabaseBuilder:
+class SearchDatabase:
     """Create and populate a SQLite database
     that contains the records we want to search within
     """
@@ -179,7 +180,7 @@ class SearchDatabaseBuilder:
         }
 
         for rd in record_dicts:
-            single_record_results = SearchDatabaseBuilder._record_dict_to_insert_data(
+            single_record_results = SearchDatabase._record_dict_to_insert_data(
                 rd, unique_id_col=unique_id_col
             )
             rt = single_record_results["df_tuple"]
@@ -405,6 +406,26 @@ class SearchDatabaseBuilder:
         self.update_token_stats_tables()
         self.create_or_replace_fts_table()
         self.index_unique_id()
+
+    def find_potental_matches(self, search_dict, return_records_limit=50):
+        if self.unique_id_col not in search_dict:
+            search_dict[self.unique_id_col] = "search_record"
+
+        finder = MatchFinder(
+            search_dict, self, return_records_limit=return_records_limit
+        )
+        finder.find_potential_matches()
+        return finder.found_records
+
+    def find_potential_matches_as_pandas(self, search_dict, return_records_limit=50):
+        if self.unique_id_col not in search_dict:
+            search_dict[self.unique_id_col] = "search_record"
+
+        finder = MatchFinder(
+            search_dict, self, return_records_limit=return_records_limit
+        )
+        finder.find_potential_matches()
+        return finder.found_records_as_df
 
 
 def chunk_list(lst, n):

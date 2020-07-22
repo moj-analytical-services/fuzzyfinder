@@ -29,7 +29,11 @@ class RecordComparisonScorer:
         token_probs_p = potenital_match_rec.token_probabilities
         self.token_probs = {}
         for col in token_probs_p:
-            self.token_probs[col] = {**token_probs_p[col], **token_probs_s[col]}
+            try:
+                self.token_probs[col] = {**token_probs_p[col], **token_probs_s[col]}
+            # If this column not specified in serach record
+            except KeyError:
+                self.token_probs[col] = token_probs_p[col]
 
     @property
     def score(self):

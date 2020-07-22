@@ -1,5 +1,5 @@
 import tempfile
-from fuzzyfinder.database import SearchDatabaseBuilder
+from fuzzyfinder.database import SearchDatabase
 from fuzzyfinder.record import Record
 
 def test_integrity():
@@ -19,7 +19,7 @@ def test_integrity():
 
     # Test it works at the level of the db
     db_filename = tempfile.NamedTemporaryFile().name
-    db = SearchDatabaseBuilder(db_filename)
+    db = SearchDatabase(db_filename)
 
     db.write_list_dicts_parallel(record_dicts, unique_id_col = 'uid', batch_size=5)
 
@@ -31,7 +31,7 @@ def test_integrity():
     assert '0' not in rec['concat_all']
 
     # Reconnect to file and check the unique_id_col is correct
-    db2 = SearchDatabaseBuilder(db_filename)
+    db2 = SearchDatabase(db_filename)
 
     assert db2.unique_id_col == 'uid'
 
