@@ -24,7 +24,7 @@ def test_integrity():
         records.append(record)
         print(rec_num)
 
-    db.write_list_dicts_parallel(records, batch_size=5)
+    db.write_list_dicts_parallel(records, unique_id_col='unique_id', batch_size=5)
 
     db.update_token_stats_tables()
 
@@ -58,7 +58,7 @@ def test_integrity():
         record = {"unique_id": i, "value": "a"}
         records.append(record)
 
-    db.write_list_dicts_parallel(records, batch_size=5)
+    db.write_list_dicts_parallel(records, unique_id_col='unique_id',  batch_size=5)
 
     db.update_token_stats_tables()
 
@@ -79,7 +79,7 @@ def test_integrity():
         record = {"unique_id": i, "value": "a"}
         records.append(record)
 
-    db.write_list_dicts_parallel(records, batch_size=5)
+    db.write_list_dicts_parallel(records,unique_id_col='unique_id',  batch_size=5)
 
     db.update_token_stats_tables()
 

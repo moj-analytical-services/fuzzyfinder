@@ -15,16 +15,20 @@ class MatchFinder:
     def __init__(
         self,
         search_dict,
-        sqlite_db_conn,
+        db,
         return_records_limit=50,
         best_score_threshold=inf,
         search_intensity=500,
     ):
 
-        self.conn = sqlite_db_conn
-        if "unique_id" not in search_dict:
-            search_dict["unique_id"] = "search_record"
-        self.record = Record(search_dict, sqlite_db_conn)
+        self.conn = db.conn
+
+        self.unique_id_col = db.unique_id_col
+
+        if self.unique_id_col not in search_dict:
+            search_dict[self.unique_id_col] = "search_record"
+
+        self.record = Record(search_dict, self.unique_id_col, db.conn)
 
         self.number_of_searches = 0
         self.return_records_limit = return_records_limit
@@ -70,7 +74,7 @@ class MatchFinder:
         if rec_id not in self.found_records:
             record_dict = self.get_record_dict_from_id(rec_id)
 
-            found_record = Record(record_dict, self.conn)
+            found_record = Record(record_dict, self.unique_id_col, self.conn)
             scorer = RecordComparisonScorer(self.record, found_record)
             score = scorer.score
 

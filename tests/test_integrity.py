@@ -16,7 +16,7 @@ def test_integrity():
         record = {"unique_id": char, "value": char}
         records.append(record)
 
-    db.write_list_dicts_parallel(records, batch_size=5)
+    db.write_list_dicts_parallel(records, unique_id_col='unique_id',  batch_size=5)
 
     sql_df_count = """
     select count(*) as count from df
@@ -27,7 +27,7 @@ def test_integrity():
     assert results[0]["count"] == 26
 
     db2 = SearchDatabaseBuilder(db_filename)
-    db2.write_list_dicts_parallel(records, batch_size=10)
+    db2.write_list_dicts_parallel(records, unique_id_col='unique_id', batch_size=10)
 
     results = db2.conn.execute(sql_df_count)
     results = results.fetchall()
@@ -54,7 +54,7 @@ def test_integrity():
         record = {"unique_id": f"{char}_2", "value": char}
         records.append(record)
 
-    db2.write_list_dicts_parallel(records, batch_size=10)
+    db2.write_list_dicts_parallel(records, unique_id_col='unique_id', batch_size=10)
 
     results = db2.conn.execute(sql_df_count)
     results = results.fetchall()
