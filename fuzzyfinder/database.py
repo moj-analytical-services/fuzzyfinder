@@ -1,6 +1,7 @@
 from collections import Counter
 from multiprocessing import Pool
 import json
+from functools import partial
 
 import sqlite3
 
@@ -36,6 +37,10 @@ class SearchDatabaseBuilder:
             self.initialise_db()
 
         # If connected to a database that already has records
+        self.unique_id_col = None
+        if not self._table_df_is_empty:
+            self.set_unique_id_col_from_db()
+
         self.example_record = None
         if not self._table_df_is_empty:
             self.set_example_record_from_db()
@@ -118,7 +123,7 @@ class SearchDatabaseBuilder:
             self.initialise_token_tables()
 
     @staticmethod
-    def _record_dict_to_insert_data(record_dict: dict):
+    def _record_dict_to_insert_data(record_dict: dict, unique_id_col: str):
         """Process a single record dict into data reaady to be entered into the database
 
         Args:
@@ -129,7 +134,7 @@ class SearchDatabaseBuilder:
                   'col_token_counts' a dictionary of Counters(), one for each column, containing token counts
         """
 
-        record = Record(record_dict)
+        record = Record(record_dict, unique_id_col=unique_id_col)
         uid = record.id
         jsond = json.dumps(record.record_dict)
         concat = record.tokenised_stringified_with_misspellings
@@ -147,7 +152,7 @@ class SearchDatabaseBuilder:
         return {"df_tuple": df_tuple, "column_counters": column_counters}
 
     @staticmethod
-    def _record_batch_to_insert_data(record_dicts: list):
+    def _record_batch_to_insert_data(record_dicts: list, unique_id_col: str):
         """Process a list of record dictionaries into data ready to be entered into the database.
 
         Args:
@@ -161,13 +166,15 @@ class SearchDatabaseBuilder:
         """
         results_batch = {
             "result_tuples": [],
-            "column_counters": ColumnCounters(Record(record_dicts[0])),
+            "column_counters": ColumnCounters(
+                Record(record_dicts[0], unique_id_col=unique_id_col)
+            ),
             "original_dicts": record_dicts,
         }
 
         for rd in record_dicts:
             single_record_results = SearchDatabaseBuilder._record_dict_to_insert_data(
-                rd
+                rd, unique_id_col=unique_id_col
             )
             rt = single_record_results["df_tuple"]
             results_batch["result_tuples"].append(rt)
@@ -202,7 +209,9 @@ class SearchDatabaseBuilder:
         # Where integrity checks fail, we do not want to increment counters
         c = self.conn.cursor()
         for record_dict in batch:
-            insert_data = self._record_dict_to_insert_data(record_dict)
+            insert_data = self._record_dict_to_insert_data(
+                record_dict, unique_id_col=self.unique_id_col
+            )
             insert_tuple = insert_data["df_tuple"]
             try:
                 c.execute("INSERT INTO df VALUES (?, ?, ?)", insert_tuple)
@@ -217,7 +226,9 @@ class SearchDatabaseBuilder:
         c.close()
         self.conn.commit()
 
-    def write_list_dicts_parallel(self, list_dicts: list, batch_size=10_000):
+    def write_list_dicts_parallel(
+        self, list_dicts: list, unique_id_col: str, batch_size=10_000
+    ):
         """Process a list of dicts containing records in parallel, turning them into data ready to be inserted
         into the databse, then insert
 
@@ -226,7 +237,10 @@ class SearchDatabaseBuilder:
             batch_size (int, optional): How many records to send to each parallel worker. Defaults to 10000.
         """
 
-        record = Record(list_dicts[0])
+        if self.example_record is None:
+            self.set_unique_id_col(unique_id_col)
+
+        record = Record(list_dicts[0], unique_id_col=self.unique_id_col)
         if self.example_record is None:
             self.set_example_record(record)
 
@@ -236,7 +250,9 @@ class SearchDatabaseBuilder:
         # Start of parallelisation
         ##########################
         p = Pool()
-        fn = self._record_batch_to_insert_data
+        fn = partial(
+            self._record_batch_to_insert_data, unique_id_col=self.unique_id_col
+        )
         results_batches = p.imap(fn, batches_of_records)
         c = self.conn.cursor()
 
@@ -288,13 +304,45 @@ class SearchDatabaseBuilder:
         c.close()
         record = record["original_record"]
         record = json.loads(record)
-        self.example_record = Record(record)
+        self.example_record = Record(record, unique_id_col=self.unique_id_col)
 
-    def write_pandas_dataframe(self, pd_df, unique_id_col: str = "unique_id"):
+    def set_unique_id_col_from_db(self):
+        sql = """
+            select unique_id_col from unique_id_col
+        """
+        c = self.conn.execute(sql)
+        results = c.fetchall()
+        unique_id_col = results[0]["unique_id_col"]
+        self.unique_id_col = unique_id_col
+
+    def set_unique_id_col(self, unique_id_col: str):
+        """The user is inserting record dictionaries. The user may wish to identify one of the keys (columns)
+        as a unique id column - containing values which are not searched for as part of the FTS but
+        which identify the record
+
+        Args:
+            unique_id_col (str): The name of the unique_id column
+        """
+
+        sql = """
+            CREATE TABLE unique_id_col (unique_id_col TEXT)
+        """
+        self.conn.execute(sql)
+        self.conn.commit()
+
+        sql = """
+            INSERT INTO unique_id_col values (?)
+        """
+        self.conn.execute(sql, (unique_id_col,))
+        self.conn.commit()
+
+        self.unique_id_col = unique_id_col
+
+    def write_pandas_dataframe(self, pd_df, unique_id_col: str):
 
         records_as_dict = pd_df.to_dict(orient="records")
 
-        self.write_list_dicts_parallel(records_as_dict)
+        self.write_list_dicts_parallel(records_as_dict, unique_id_col=unique_id_col)
 
         logger.debug(f"Records written: {self._records_written_counter }")
 

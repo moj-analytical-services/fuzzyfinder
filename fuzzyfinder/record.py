@@ -3,6 +3,7 @@ from functools import lru_cache
 import re
 import sqlite3
 from metaphone import doublemetaphone
+import uuid
 
 
 class Record:
@@ -24,20 +25,29 @@ class Record:
     def __init__(
         self,
         record_dict: dict,
+        unique_id_col: str,
         sqlite_db_conn: sqlite3.Connection = None,
-        unique_id_col: str = "unique_id",
     ):
         """
         Args:
             record_dict (dict): A row of data represented as a dictionary with colnames as keys and col values as values
+            unique_id_col (str): The column that contains the unique record identifier.
             sqlite_db_conn (sqlie3.Connection):  A connection to a sqlite database that contains column statistics
-            unique_id_col (str, optional): The column that contains the unique record identifier.
-                Defaults to "unique_id".
+
         """
 
         self.record_dict = deepcopy(record_dict)
         self.conn = sqlite_db_conn
         self.unique_id_col = unique_id_col
+
+        if unique_id_col is None:
+            self.record_dict["__unique_id"] = uuid.uuid4().hex
+            self.unique_id_col = "__unique_id"
+
+        if self.unique_id_col not in self.record_dict:
+            raise KeyError(
+                f"The unique_id_col {self.unique_id_col} you specified does not exist in the record"
+            )
 
     def __hash__(self):
         return hash(self.record_dict[self.unique_id_col])

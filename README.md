@@ -15,7 +15,9 @@ Add some records:
 
 ```python
 df = pd.read_csv('mytable.csv')
-db.write_pandas_dataframe(df_to_write)
+
+# Note you should supply the name of a unique_id column so they can be uniquely identified later
+db.write_pandas_dataframe(df_to_write, unique_id_col='unique_id')
 ```
 
 Once you've finished adding records, optimise the database for search:
