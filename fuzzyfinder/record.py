@@ -186,7 +186,7 @@ def get_token_proportion(token, column, conn):
     c = conn.cursor()
     sql = f"""
     select token_proportion
-    from {column}_token_proportions
+    from {column}_token_counts
     where token = "{token}"
     """
 

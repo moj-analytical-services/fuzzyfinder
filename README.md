@@ -24,15 +24,15 @@ Once you've finished adding records, optimise the database for search:
 
 
 ```python
-db.update_token_stats_tables()
+db.build_or_replace_stats_tables()
 ```
 
 Now you can serach for potential matches
 
 ```python
 search_dict = {"first_name": "john", "surname": "smith"}
-search_rec = Record(search_dict, db.conn)
-inder = MatchFinder(search_dict, db.conn, return_records_limit=50)
+search_rec = Record(search_dict, db)
+inder = MatchFinder(search_dict, db, return_records_limit=50)
 finder.find_potential_matches()
 finder.found_records_as_df
 ```
