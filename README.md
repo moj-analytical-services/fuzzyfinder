@@ -22,8 +22,7 @@ Once you've finished adding records, optimise the database for search:
 
 
 ```python
-db.build_or_replace_stats_tables()
-db.clean_and_optimise_database()
+db.update_token_stats_tables()
 ```
 
 Now you can serach for potential matches
