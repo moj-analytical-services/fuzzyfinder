@@ -1,7 +1,7 @@
 import tempfile
 import string
 
-from fuzzyfinder.database import SearchDatabaseBuilder
+from fuzzyfinder.database import SearchDatabase
 
 
 def test_integrity():
@@ -10,7 +10,7 @@ def test_integrity():
     # 1. It's not possible to add the same unique_id twice
     # 2. Token counts are computed correctly when you try and add the same unique_id twice
     db_filename = tempfile.NamedTemporaryFile().name
-    db = SearchDatabaseBuilder(db_filename)
+    db = SearchDatabase(db_filename)
     records = []
     for char in list(string.ascii_lowercase):
         record = {"unique_id": char, "value": char}
@@ -26,7 +26,7 @@ def test_integrity():
     results = results.fetchall()
     assert results[0]["count"] == 26
 
-    db2 = SearchDatabaseBuilder(db_filename)
+    db2 = SearchDatabase(db_filename)
     db2.write_list_dicts_parallel(records, unique_id_col='unique_id', batch_size=10)
 
     results = db2.conn.execute(sql_df_count)

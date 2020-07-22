@@ -28,6 +28,15 @@ class MatchFinder:
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record"
 
+        example_record = db.example_record.record_dict
+        for key in search_dict:
+            if key not in example_record:
+                raise ValueError(
+                    f"Search dictionary keys must match records in database.  "
+                    f"You provided '{key}', which is not in database. "
+                    f"Keys in database are {list(example_record.keys())}"
+                )
+
         self.record = Record(search_dict, self.unique_id_col, db.conn)
 
         self.number_of_searches = 0

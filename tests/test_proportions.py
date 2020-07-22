@@ -1,7 +1,7 @@
 import tempfile
 
 
-from fuzzyfinder.database import SearchDatabaseBuilder
+from fuzzyfinder.database import SearchDatabase
 
 
 def test_integrity():
@@ -10,7 +10,7 @@ def test_integrity():
     # 1. It's not possible to add the same unique_id twice
     # 2. Token counts are computed correctly when you try and add the same unique_id twice
     db_filename = tempfile.NamedTemporaryFile().name
-    db = SearchDatabaseBuilder(db_filename)
+    db = SearchDatabase(db_filename)
 
     rec_tokens = []
     rec_tokens.extend(["a"] * 1)
