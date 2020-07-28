@@ -261,12 +261,13 @@ class SearchDatabase:
             self._record_batch_to_insert_data, unique_id_col=self.unique_id_col
         )
         results_batches = p.imap(fn, batches_of_records)
-        c = self.conn.cursor()
 
         column_counters = ColumnCounters(self.example_record)
 
         # Since it's an imap, which results in a generator
-        # this might start executing before the final batch completes?
+        # This starts executing as soon as the first batch completes.
+        # So these writes don't need parallising (it's much faster to run the insert than to process the batch)
+        # Meaning we can just do them slowly while we're waiting for batches to compute
         for results_batch in results_batches:
             # If an insert fails it's because one of the unique_ids already exists
             # If so, insert the records one by one, logging integrity errors
@@ -284,11 +285,58 @@ class SearchDatabase:
         # End of parallelisation
         ##########################
 
-        # sql creates or updates key
+        if self.db_filename != ":memory:":
+            ####################################################
+            # Start of parallelisation of column_counter inserts - note this is only posible if db is on disk
+            ####################################################
+            p = Pool()
+            fn = partial(self._write_col_counter_to_db, db_conn_string=self.db_filename)
+            insert_data = column_counters.counters_as_list_for_parallel_write()
 
-        for col in column_counters.columns:
+            p.imap(fn, insert_data)
 
-            for token, value in column_counters.col_items(col):
+            p.close()
+            p.join()
+
+            ####################################################
+            # End of parallelisation of column_counter inserts
+            ####################################################
+        else:
+            data = column_counters.counters_as_list_for_parallel_write()
+            for d in data:
+                self._write_col_counter_to_db(d, "", self.conn)
+
+    @staticmethod
+    def _write_col_counter_to_db(data, db_conn_string, db_conn=None):
+
+        if not db_conn:
+            conn = sqlite3.connect(db_conn_string)
+        else:
+            conn = db_conn
+        c = conn.cursor()
+
+        col = data["col"]
+        counter = data["counter"]
+
+        logger.info(f"starting to write col counter {col}")
+
+        try:
+            # This is slightly faster, but requires a relative new version of sqlite
+            for token, value in counter.items():
+
+                sql = f"""
+                    INSERT INTO {col}_token_counts VALUES (?, ?, ?)
+                    ON CONFLICT(token) DO UPDATE SET
+                    token_count = token_count + ?
+                    WHERE token = ?;
+                """
+
+                c.execute(sql, (token, value, None, value, token))
+        except sqlite3.OperationalError:
+            # Older versions of sqlite that do not support upsert
+
+            for token, value in counter.items():
+
                 sql = f"""
                     INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
                 """
@@ -300,8 +348,10 @@ class SearchDatabase:
                 """
                 c.execute(sql)
 
+        conn.commit()
         c.close()
-        self.conn.commit()
+
+        logger.info(f"finished writing col counter {col}")
 
     def set_example_record_from_db(self):
         c = self.conn.cursor()
@@ -345,11 +395,15 @@ class SearchDatabase:
 
         self.unique_id_col = unique_id_col
 
-    def write_pandas_dataframe(self, pd_df, unique_id_col: str):
+    def write_pandas_dataframe(
+        self, pd_df, unique_id_col: str, batch_size: int = 10_000
+    ):
 
         records_as_dict = pd_df.to_dict(orient="records")
 
-        self.write_list_dicts_parallel(records_as_dict, unique_id_col=unique_id_col)
+        self.write_list_dicts_parallel(
+            records_as_dict, unique_id_col=unique_id_col, batch_size=batch_size
+        )
 
         logger.debug(f"Records written: {self._records_written_counter }")
 
@@ -469,6 +523,13 @@ class ColumnCounters:
         for col in self.columns:
             new_counter = new_column_counters[col]
             self.update_single_column(col, new_counter)
+
+    def counters_as_list_for_parallel_write(self):
+        items = []
+        for c in self.columns:
+            items.append({"col": c, "counter": self[c]})
+
+        return items
 
     def __repr__(self):
         return self.col_token_counts.__repr__()

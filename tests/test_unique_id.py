@@ -14,8 +14,6 @@ def test_integrity():
 
     # test it works at the level of the record
     record = Record(record_dict, unique_id_col='uid')
-    print(record.tokenised_including_mispellings)
-    print(record.columns_except_unique_id)
 
     # Test it works at the level of the db
     db_filename = tempfile.NamedTemporaryFile().name

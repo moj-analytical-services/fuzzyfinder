@@ -1,15 +1,26 @@
 import tempfile
+import pytest
 
 
 from fuzzyfinder.database import SearchDatabase
 
+@pytest.mark.parametrize(
+    "db_con_string",
+    [None, ":memory:", "temp"],
+)
+def test_integrity(db_con_string):
 
-def test_integrity():
+    print(db_con_string)
 
     # Want to test database insert functionality to check that:
     # 1. It's not possible to add the same unique_id twice
     # 2. Token counts are computed correctly when you try and add the same unique_id twice
-    db_filename = tempfile.NamedTemporaryFile().name
+    if db_con_string == "temp":
+        db_filename = tempfile.NamedTemporaryFile().name
+    else:
+        db_filename = db_con_string
+
+    print(db_filename)
     db = SearchDatabase(db_filename)
 
     rec_tokens = []
@@ -22,7 +33,6 @@ def test_integrity():
     for rec_num, char in enumerate(rec_tokens):
         record = {"unique_id": rec_num, "value": char}
         records.append(record)
-        print(rec_num)
 
     db.write_list_dicts_parallel(records, unique_id_col='unique_id', batch_size=5)
 
