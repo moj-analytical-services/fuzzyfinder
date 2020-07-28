@@ -7,8 +7,8 @@ Given a large table of records, fuzzy search for a record, and return a table of
 
 First build a database of your records.  If you provide a path, the db is persisted to disk.  Otherwise it's in-memory:
 ```python
-from fuzzyfinder.database import SearchDatabaseBuilder
-db = SearchDatabaseBuilder()
+from fuzzyfinder.database import SearchDatabase
+db = SearchDatabase()
 ```
 
 Add some records:

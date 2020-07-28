@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "fuzzyfinder"
-version = "0.1.1"
+version = "0.1.2"
 description = "Fuzzy search for matching records and score search results according to how closely they match"
 authors = ["Robin Linacre <robinlinacre@hotmail.com>"]
 license = "MIT"
