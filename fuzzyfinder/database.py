@@ -266,7 +266,9 @@ class SearchDatabase:
         column_counters = ColumnCounters(self.example_record)
 
         # Since it's an imap, which results in a generator
-        # this might start executing before the final batch completes?
+        # This starts executing as soon as the first batch completes.
+        # So these writes don't need parallising (it's much faster to run the insert than to process the batch)
+        # Meaning we can just do them slowly while we're waiting for batches to compute
         for results_batch in results_batches:
             # If an insert fails it's because one of the unique_ids already exists
             # If so, insert the records one by one, logging integrity errors
@@ -284,24 +286,55 @@ class SearchDatabase:
         # End of parallelisation
         ##########################
 
-        # sql creates or updates key
 
-        for col in column_counters.columns:
+       ####################################################
+        # Start of parallelisation of column_counter inserts
+        ####################################################
+        p = Pool()
+        fn = partial(self._write_col_counter_to_db, db_conn_string=self.db_filename)
+        insert_data = column_counters.counters_as_list_for_parallel_write()
 
-            for token, value in column_counters.col_items(col):
-                sql = f"""
-                    INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
-                """
-                c.execute(sql, (token, 0, None))
+        p.imap(fn, insert_data)
 
-                sql = f"""
-                UPDATE {col}_token_counts SET token_count = token_count + {value}
-                    WHERE token = '{token}';
-                """
-                c.execute(sql)
+        p.close()
+        p.join()
+
+       ####################################################
+        # End of parallelisation of column_counter inserts
+        ####################################################
+
+
+
+    @staticmethod
+    def _write_col_counter_to_db(data, db_conn_string):
+
+
+        conn = sqlite3.connect(db_conn_string)
+        c = conn.cursor()
+
+        col = data['col']
+        counter = data['counter']
+
+        logger.info(f'starting to write col counter {col}')
+
+        for token, value in counter.items():
+
+            sql = f"""
+                INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
+            """
+            c.execute(sql, (token, 0, None))
+
+            sql = f"""
+            UPDATE {col}_token_counts SET token_count = token_count + {value}
+                WHERE token = '{token}';
+            """
+            c.execute(sql)
 
         c.close()
-        self.conn.commit()
+        conn.commit()
+
+        logger.info(f'finished writing col counter {col}')
+
 
     def set_example_record_from_db(self):
         c = self.conn.cursor()
@@ -469,6 +502,13 @@ class ColumnCounters:
         for col in self.columns:
             new_counter = new_column_counters[col]
             self.update_single_column(col, new_counter)
+
+    def counters_as_list_for_parallel_write(self):
+        items = []
+        for c in self.columns:
+            items.append({"col": c, "counter": self[c]})
+
+        return items
 
     def __repr__(self):
         return self.col_token_counts.__repr__()
