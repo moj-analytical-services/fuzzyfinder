@@ -92,6 +92,10 @@ class RecordComparisonScorer:
                 p = 1
             else:
                 p = self.token_probs[col][t]["proportion"]
+                if (
+                    p == "does_not_exist_in_db"
+                ):  # If we've never seen this token we can't account for it
+                    p = 1
             # logger.debug(f'Scoring unmatching token {t} from search record as {p}')
             prob = p * prob
 
