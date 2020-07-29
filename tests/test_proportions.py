@@ -36,7 +36,7 @@ def test_integrity(db_con_string):
 
     db.write_list_dicts_parallel(records, unique_id_col='unique_id', batch_size=5)
 
-    db.update_token_stats_tables()
+    db._update_token_stats_tables()
 
     # At the moment, all tokens should have a count of 1
 
@@ -70,7 +70,7 @@ def test_integrity(db_con_string):
 
     db.write_list_dicts_parallel(records, unique_id_col='unique_id',  batch_size=5)
 
-    db.update_token_stats_tables()
+    db._update_token_stats_tables()
 
     sql_tkn_count = """
     select token_proportion
@@ -91,7 +91,7 @@ def test_integrity(db_con_string):
 
     db.write_list_dicts_parallel(records,unique_id_col='unique_id',  batch_size=5)
 
-    db.update_token_stats_tables()
+    db._update_token_stats_tables()
 
     sql_tkn_count = """
     select token_proportion
