@@ -135,7 +135,7 @@ class MatchFinder:
             WHERE concat_all
             MATCH
             '{fts_string}'
-            LIMIT {self.return_records_limit}
+            LIMIT {self.individual_search_limit}
             """
         logger.debug(f"Searching for {fts_string}")
         cur = self.conn.cursor()
