@@ -2,6 +2,7 @@ from collections import Counter
 from multiprocessing import Pool
 import json
 from functools import partial
+import uuid
 
 import sqlite3
 
@@ -407,7 +408,7 @@ class SearchDatabase:
 
         logger.debug(f"Records written: {self._records_written_counter }")
 
-    def update_token_stats_tables(self):
+    def _update_token_stats_tables(self):
         rec = self.example_record
         columns = rec.columns_except_unique_id
 
@@ -423,7 +424,7 @@ class SearchDatabase:
 
         c.close()
 
-    def create_or_replace_fts_table(self):
+    def _create_or_replace_fts_table(self):
         c = self.conn.cursor()
         logger.debug("Starting to create FTS table")
         # Create FTS
@@ -457,13 +458,17 @@ class SearchDatabase:
         logger.debug("Unique_id field indexing completed")
 
     def build_or_replace_stats_tables(self):
-        self.update_token_stats_tables()
-        self.create_or_replace_fts_table()
+        self._update_token_stats_tables()
+        self._create_or_replace_fts_table()
         self.index_unique_id()
 
     def find_potental_matches(self, search_dict, return_records_limit=50):
         if self.unique_id_col not in search_dict:
-            search_dict[self.unique_id_col] = "search_record"
+            search_dict[self.unique_id_col] = "search_record_" + uuid.uuid4().hex
+        else:
+            search_dict[self.unique_id_col] = (
+                str(search_dict[self.unique_id_col]) + uuid.uuid4().hex
+            )
 
         finder = MatchFinder(
             search_dict, self, return_records_limit=return_records_limit
@@ -473,7 +478,11 @@ class SearchDatabase:
 
     def find_potential_matches_as_pandas(self, search_dict, return_records_limit=50):
         if self.unique_id_col not in search_dict:
-            search_dict[self.unique_id_col] = "search_record"
+            search_dict[self.unique_id_col] = "search_record_" + uuid.uuid4().hex
+        else:
+            search_dict[self.unique_id_col] = (
+                str(search_dict[self.unique_id_col]) + uuid.uuid4().hex
+            )
 
         finder = MatchFinder(
             search_dict, self, return_records_limit=return_records_limit

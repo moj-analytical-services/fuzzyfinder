@@ -3,7 +3,6 @@ from functools import lru_cache
 import re
 import sqlite3
 from metaphone import doublemetaphone
-import uuid
 
 
 class Record:
@@ -39,10 +38,6 @@ class Record:
         self.record_dict = deepcopy(record_dict)
         self.conn = sqlite_db_conn
         self.unique_id_col = unique_id_col
-
-        if unique_id_col is None:
-            self.record_dict["__unique_id"] = uuid.uuid4().hex
-            self.unique_id_col = "__unique_id"
 
         if self.unique_id_col not in self.record_dict:
             raise KeyError(
@@ -169,11 +164,14 @@ class Record:
     @property
     def tokens_in_order_of_rarity(self):
         tfdp = self.token_probabilities
+
         token_list = []
         for col in tfdp.keys():
             for v in tfdp[col].values():
                 token_list.append(v)
-
+        token_list = [
+            t for t in token_list if t["proportion"] != "does_not_exist_in_db"
+        ]
         token_list.sort(key=lambda x: x["proportion"])
         return tuple([t["token"] for t in token_list])
 
@@ -196,7 +194,7 @@ def get_token_proportion(token, column, conn):
 
     if not d:
         # If the token NEVER appears in the search database, 'deprioritise' it in searches
-        value = {"token": token, "proportion": 1}
+        value = {"token": token, "proportion": "does_not_exist_in_db"}
     else:
         value = {"token": token, "proportion": d["token_proportion"]}
 
