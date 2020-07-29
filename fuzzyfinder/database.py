@@ -462,7 +462,13 @@ class SearchDatabase:
         self._create_or_replace_fts_table()
         self.index_unique_id()
 
-    def find_potental_matches(self, search_dict, return_records_limit=50):
+    def find_potental_matches(
+        self,
+        search_dict,
+        return_records_limit=50,
+        search_intensity=500,
+        individual_search_limit=50,
+    ):
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record_" + uuid.uuid4().hex
         else:
@@ -471,12 +477,22 @@ class SearchDatabase:
             )
 
         finder = MatchFinder(
-            search_dict, self, return_records_limit=return_records_limit
+            search_dict,
+            self,
+            return_records_limit=return_records_limit,
+            search_intensity=search_intensity,
+            individual_search_limit=individual_search_limit,
         )
         finder.find_potential_matches()
         return finder.found_records
 
-    def find_potential_matches_as_pandas(self, search_dict, return_records_limit=50):
+    def find_potential_matches_as_pandas(
+        self,
+        search_dict,
+        return_records_limit=50,
+        search_intensity=500,
+        individual_search_limit=50,
+    ):
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record_" + uuid.uuid4().hex
         else:
@@ -485,7 +501,11 @@ class SearchDatabase:
             )
 
         finder = MatchFinder(
-            search_dict, self, return_records_limit=return_records_limit
+            search_dict,
+            self,
+            return_records_limit=return_records_limit,
+            search_intensity=search_intensity,
+            individual_search_limit=individual_search_limit,
         )
         finder.find_potential_matches()
         return finder.found_records_as_df

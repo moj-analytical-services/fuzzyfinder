@@ -19,6 +19,7 @@ class MatchFinder:
         return_records_limit=50,
         best_score_threshold=inf,
         search_intensity=500,
+        individual_search_limit=50,
     ):
 
         self.conn = db.conn
@@ -43,6 +44,7 @@ class MatchFinder:
         self.return_records_limit = return_records_limit
         self.best_score_threshold = best_score_threshold
         self.search_intensity = search_intensity
+        self.individual_search_limit = individual_search_limit
 
         self.found_records = {}
 
@@ -157,7 +159,7 @@ class MatchFinder:
         if len(self.found_records.keys()) > self.return_records_limit:
             return True
         if results:
-            if results["num_results"] == self.return_records_limit:
+            if results["num_results"] == self.individual_search_limit:
                 return True
         return False
 
