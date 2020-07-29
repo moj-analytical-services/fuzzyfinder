@@ -466,7 +466,9 @@ class SearchDatabase:
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record_" + uuid.uuid4().hex
         else:
-            search_dict[self.unique_id_col] = str(search_dict[self.unique_id_col]) + uuid.uuid4().hex
+            search_dict[self.unique_id_col] = (
+                str(search_dict[self.unique_id_col]) + uuid.uuid4().hex
+            )
 
         finder = MatchFinder(
             search_dict, self, return_records_limit=return_records_limit
@@ -478,7 +480,9 @@ class SearchDatabase:
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record_" + uuid.uuid4().hex
         else:
-            search_dict[self.unique_id_col] = str(search_dict[self.unique_id_col]) + uuid.uuid4().hex
+            search_dict[self.unique_id_col] = (
+                str(search_dict[self.unique_id_col]) + uuid.uuid4().hex
+            )
 
         finder = MatchFinder(
             search_dict, self, return_records_limit=return_records_limit

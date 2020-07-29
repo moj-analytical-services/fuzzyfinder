@@ -3,7 +3,6 @@ from functools import lru_cache
 import re
 import sqlite3
 from metaphone import doublemetaphone
-import uuid
 
 
 class Record:
@@ -165,12 +164,14 @@ class Record:
     @property
     def tokens_in_order_of_rarity(self):
         tfdp = self.token_probabilities
-        
+
         token_list = []
         for col in tfdp.keys():
             for v in tfdp[col].values():
                 token_list.append(v)
-        token_list = [t for t in token_list if t["proportion"] != "does_not_exist_in_db"]
+        token_list = [
+            t for t in token_list if t["proportion"] != "does_not_exist_in_db"
+        ]
         token_list.sort(key=lambda x: x["proportion"])
         return tuple([t["token"] for t in token_list])
 
