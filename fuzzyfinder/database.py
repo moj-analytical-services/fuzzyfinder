@@ -269,6 +269,8 @@ class SearchDatabase:
         # This starts executing as soon as the first batch completes.
         # So these writes don't need parallising (it's much faster to run the insert than to process the batch)
         # Meaning we can just do them slowly while we're waiting for batches to compute
+        # There's a gist here which demonstrates the principle:
+        # https://gist.github.com/RobinL/4e6a266f0287df32f2aa7aee1b3a5450
         for results_batch in results_batches:
             # If an insert fails it's because one of the unique_ids already exists
             # If so, insert the records one by one, logging integrity errors
