@@ -10,7 +10,6 @@ from fuzzyfinder.database import SearchDatabase
 )
 def test_integrity(db_con_string):
 
-    print(db_con_string)
 
     # Want to test database insert functionality to check that:
     # 1. It's not possible to add the same unique_id twice
@@ -20,7 +19,6 @@ def test_integrity(db_con_string):
     else:
         db_filename = db_con_string
 
-    print(db_filename)
     db = SearchDatabase(db_filename)
 
     rec_tokens = []

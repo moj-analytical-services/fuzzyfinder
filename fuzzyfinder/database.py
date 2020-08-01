@@ -3,6 +3,7 @@ from multiprocessing import Pool
 import json
 from functools import partial
 import uuid
+import warnings
 
 import sqlite3
 
@@ -20,7 +21,7 @@ class SearchDatabase:
     that contains the records we want to search within
     """
 
-    def __init__(self, db_filename: str = None, unique_id_integrity_check=True):
+    def __init__(self, db_filename: str = None):
         """
         Args:
             filename (str, optional):  The filename for the database.  If none, the database will be an in-memory
@@ -30,23 +31,31 @@ class SearchDatabase:
         if not db_filename:
             db_filename = ":memory:"
         self.db_filename = db_filename
+
         self.conn = sqlite3.connect(db_filename)
-        self.unique_id_integrity_check = unique_id_integrity_check
 
         # The connection will render query results as list of dicts
         self.conn.row_factory = dict_factory
 
+        # Check whether user has opened a previously-created database or this is a new database
+
         if not self._table_df_exists:
             self.initialise_db()
 
-        # If connected to a database that already has records
         self.unique_id_col = None
+        self.example_record = None
+        self.token_tables_empty = True
+
+        # If connected to a database that already has records
         if not self._table_df_is_empty:
             self.set_unique_id_col_from_db()
-
-        self.example_record = None
-        if not self._table_df_is_empty:
             self.set_example_record_from_db()
+            self.check_col_counters()
+
+        # If the user is adding multiple talbes (e.g. calling write_pandas_dataframe several times)
+        # it's more performant to retain column counters across these tables and write them once
+        # rather than writing after each table
+        self.column_counters = None
 
         self._records_written_counter = 0
 
@@ -79,34 +88,73 @@ class SearchDatabase:
         else:
             return False
 
-    @property
-    def db_status(self):
-        if not self._table_df_exists:
-            return "blank"
-
-        if not self._table_df_is_empty:
-            return "build_in_progress"
-
     def initialise_db(self):
         c = self.conn.cursor()
 
-        if self.unique_id_integrity_check:
-            integrity_check = "NOT NULL PRIMARY KEY"
-        else:
-            integrity_check = ""
-
         c.execute(
-            f"""CREATE TABLE df
-                    (unique_id TEXT {integrity_check},
+            """CREATE TABLE df
+                    (unique_id TEXT NOT NULL PRIMARY KEY,
                      original_record JSON,
                      concat_all TEXT)
                   """
         )
+
+        # This is a key/value tore used to store various items of state, such as name of unique_id_col
+        # whether any token counts have been written so far
+        c.execute(
+            """
+            CREATE TABLE db_state
+
+            (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """
+        )
+        self.conn.commit()
+
+        self.set_key_value_to_db_state_table("unique_id_col", None)
+        self.set_key_value_to_db_state_table("col_counters_in_sync", "true")
+
         # https://stackoverflow.com/questions/1711631/improve-insert-per-second-performance-of-sqlite
         c.execute("PRAGMA synchronous = EXTRA")
         c.execute("PRAGMA journal_mode = WAL")
 
         c.close()
+
+    def set_key_value_to_db_state_table(self, key, value):
+
+        c = self.conn.cursor()
+        sql = """
+            INSERT OR IGNORE INTO db_state VALUES (?, ?)
+        """
+        c.execute(sql, (key, value))
+
+        sql = """
+        UPDATE db_state SET value = ?
+            WHERE key = ?;
+        """
+        c.execute(sql, (value, key))
+
+        c.close()
+        self.conn.commit()
+
+    def get_value_from_db_state_table(self, key):
+
+        sql = """
+            select * from db_state
+            where key = ?
+        """
+        c = self.conn.execute(sql, (key,))
+        results = c.fetchall()
+        return results[0]["value"]
+
+    def check_col_counters(self):
+        val = self.get_value_from_db_state_table("col_counters_in_sync")
+        if val != "true":
+            warnings.warn(
+                "Your token counters are out of sync with the database, rebuild recommended."
+            )
 
     def initialise_token_tables(self):
         rec = self.example_record
@@ -115,20 +163,11 @@ class SearchDatabase:
         for col in columns:
             sql = f"""
                     CREATE TABLE {col}_token_counts
-                    (token text primary key, token_count int, token_proportion float)
+                    (token text PRIMARY KEY, token_count int, token_proportion float) WITHOUT ROWID
                    """
             c.execute(sql)
 
-            sql = f"""
-            CREATE INDEX {col}_token_proportions_idx ON {col}_token_counts (token);
-            """
-            c.execute(sql)
         c.close()
-
-    def set_example_record(self, record):
-        self.example_record = record
-        if self._table_df_is_empty:
-            self.initialise_token_tables()
 
     @staticmethod
     def _record_dict_to_insert_data(record_dict: dict, unique_id_col: str):
@@ -235,7 +274,11 @@ class SearchDatabase:
         self.conn.commit()
 
     def write_list_dicts_parallel(
-        self, list_dicts: list, unique_id_col: str, batch_size=10_000
+        self,
+        list_dicts: list,
+        unique_id_col: str,
+        batch_size=10_000,
+        write_column_counters=True,
     ):
         """Process a list of dicts containing records in parallel, turning them into data ready to be inserted
         into the databse, then insert
@@ -245,12 +288,15 @@ class SearchDatabase:
             batch_size (int, optional): How many records to send to each parallel worker. Defaults to 10000.
         """
 
-        if self.example_record is None:
-            self.set_unique_id_col(unique_id_col)
+        # This may be the first time we've seen a record.  If so, need to do some setup
+        if self.unique_id_col is None:
+            self.unique_id_col = unique_id_col
+            self.set_key_value_to_db_state_table("unique_id_col", unique_id_col)
 
-        record = Record(list_dicts[0], unique_id_col=self.unique_id_col)
         if self.example_record is None:
-            self.set_example_record(record)
+            record = Record(list_dicts[0], unique_id_col=self.unique_id_col)
+            self.example_record = record
+            self.initialise_token_tables()
 
         batches_of_records = chunk_list(list_dicts, batch_size)
 
@@ -263,7 +309,8 @@ class SearchDatabase:
         )
         results_batches = p.imap(fn, batches_of_records)
 
-        column_counters = ColumnCounters(self.example_record)
+        if self.column_counters is None:
+            self.column_counters = ColumnCounters(self.example_record)
 
         # Since it's an imap, which results in a generator
         # This starts executing as soon as the first batch completes.
@@ -275,18 +322,25 @@ class SearchDatabase:
             # If an insert fails it's because one of the unique_ids already exists
             # If so, insert the records one by one, logging integrity errors
             try:
-                self.bulk_insert_batch(results_batch, column_counters)
+                self.bulk_insert_batch(results_batch, self.column_counters)
             except sqlite3.IntegrityError:
                 self.insert_batch_one_by_one(
-                    results_batch["original_dicts"], column_counters
+                    results_batch["original_dicts"], self.column_counters
                 )
 
         p.close()
         p.join()
 
+        self.set_key_value_to_db_state_table("col_counters_in_sync", "false")
+
         ##########################
         # End of parallelisation
         ##########################
+
+        if write_column_counters:
+            self.write_all_col_counters_to_db()
+
+    def write_all_col_counters_to_db(self):
 
         if self.db_filename != ":memory:":
             ####################################################
@@ -294,7 +348,7 @@ class SearchDatabase:
             ####################################################
             p = Pool()
             fn = partial(self._write_col_counter_to_db, db_conn_string=self.db_filename)
-            insert_data = column_counters.counters_as_list_for_parallel_write()
+            insert_data = self.column_counters.counters_as_list_for_parallel_write()
 
             p.imap(fn, insert_data)
 
@@ -305,9 +359,13 @@ class SearchDatabase:
             # End of parallelisation of column_counter inserts
             ####################################################
         else:
-            data = column_counters.counters_as_list_for_parallel_write()
+            data = self.column_counters.counters_as_list_for_parallel_write()
             for d in data:
                 self._write_col_counter_to_db(d, "", self.conn)
+
+        self.set_key_value_to_db_state_table("col_counters_in_sync", "true")
+        # reset column counters
+        self.column_counters = None
 
     @staticmethod
     def _write_col_counter_to_db(data, db_conn_string, db_conn=None):
@@ -367,34 +425,7 @@ class SearchDatabase:
         self.example_record = Record(record, unique_id_col=self.unique_id_col)
 
     def set_unique_id_col_from_db(self):
-        sql = """
-            select unique_id_col from unique_id_col
-        """
-        c = self.conn.execute(sql)
-        results = c.fetchall()
-        unique_id_col = results[0]["unique_id_col"]
-        self.unique_id_col = unique_id_col
-
-    def set_unique_id_col(self, unique_id_col: str):
-        """The user is inserting record dictionaries. The user may wish to identify one of the keys (columns)
-        as a unique id column - containing values which are not searched for as part of the FTS but
-        which identify the record
-
-        Args:
-            unique_id_col (str): The name of the unique_id column
-        """
-
-        sql = """
-            CREATE TABLE unique_id_col (unique_id_col TEXT)
-        """
-        self.conn.execute(sql)
-        self.conn.commit()
-
-        sql = """
-            INSERT INTO unique_id_col values (?)
-        """
-        self.conn.execute(sql, (unique_id_col,))
-        self.conn.commit()
+        unique_id_col = self.get_value_from_db_state_table("unique_id_col")
 
         self.unique_id_col = unique_id_col
 
@@ -448,21 +479,9 @@ class SearchDatabase:
         c.close()
         logger.debug("Created FTS table")
 
-    def index_unique_id(self):
-        c = self.conn.cursor()
-        logger.debug("Starting to index unique_id field")
-        sql = """
-        CREATE INDEX df_unique_id_idx ON df (unique_id);
-        """
-        c.execute(sql)
-        self.conn.commit()
-        c.close()
-        logger.debug("Unique_id field indexing completed")
-
     def build_or_replace_stats_tables(self):
         self._update_token_stats_tables()
         self._create_or_replace_fts_table()
-        self.index_unique_id()
 
     def find_potental_matches(
         self,
