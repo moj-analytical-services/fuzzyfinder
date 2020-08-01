@@ -14,7 +14,7 @@ from .utils import dict_factory
 import logging
 
 logger = logging.getLogger(__name__)
-
+logger.info('top of db')
 
 class SearchDatabase:
     """Create and populate a SQLite database
@@ -90,7 +90,7 @@ class SearchDatabase:
 
     def initialise_db(self):
         c = self.conn.cursor()
-
+#                     (unique_id TEXT NOT NULL PRIMARY KEY,
         c.execute(
             """CREATE TABLE df
                     (unique_id TEXT NOT NULL PRIMARY KEY,
@@ -160,10 +160,11 @@ class SearchDatabase:
         rec = self.example_record
         columns = rec.columns_except_unique_id
         c = self.conn.cursor()
+
         for col in columns:
             sql = f"""
                     CREATE TABLE {col}_token_counts
-                    (token text PRIMARY KEY, token_count int, token_proportion float) WITHOUT ROWID
+                    (token text PRIMARY KEY, token_count int, token_proportion float)
                    """
             c.execute(sql)
 
@@ -342,6 +343,8 @@ class SearchDatabase:
 
     def write_all_col_counters_to_db(self):
 
+        logger.info('starting to write all col counters')
+
         if self.db_filename != ":memory:":
             ####################################################
             # Start of parallelisation of column_counter inserts - note this is only posible if db is on disk
@@ -379,10 +382,12 @@ class SearchDatabase:
         col = data["col"]
         counter = data["counter"]
 
-        logger.info(f"starting to write col counter {col}")
+        logger.debug(f"starting to write col counter {col}")
+        print(counter)
 
         try:
-            # This is slightly faster, but requires a relative new version of sqlite
+        # This is slightly faster, but requires a relative new version of sqlite
+            logger.info('hi there')
             for token, value in counter.items():
 
                 sql = f"""
@@ -430,13 +435,14 @@ class SearchDatabase:
         self.unique_id_col = unique_id_col
 
     def write_pandas_dataframe(
-        self, pd_df, unique_id_col: str, batch_size: int = 10_000
+        self, pd_df, unique_id_col: str, batch_size: int = 10_000, write_column_counters=True
     ):
 
         records_as_dict = pd_df.to_dict(orient="records")
 
         self.write_list_dicts_parallel(
-            records_as_dict, unique_id_col=unique_id_col, batch_size=batch_size
+            records_as_dict, unique_id_col=unique_id_col, batch_size=batch_size,
+            write_column_counters=write_column_counters
         )
 
         logger.debug(f"Records written: {self._records_written_counter }")
