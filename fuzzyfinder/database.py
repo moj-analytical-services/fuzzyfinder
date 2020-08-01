@@ -383,11 +383,9 @@ class SearchDatabase:
         counter = data["counter"]
 
         logger.debug(f"starting to write col counter {col}")
-        print(counter)
 
         try:
             # This is slightly faster, but requires a relative new version of sqlite
-            logger.info("hi there")
             for token, value in counter.items():
 
                 sql = f"""
