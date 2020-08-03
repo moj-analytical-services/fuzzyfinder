@@ -23,6 +23,4 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           poetry install
-      - name: Run unit tests
-        run: |
           poetry run pytest tests
