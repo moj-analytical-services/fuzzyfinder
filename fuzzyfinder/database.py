@@ -118,6 +118,14 @@ class SearchDatabase:
         self.set_key_value_to_db_state_table("unique_id_col", None)
         self.set_key_value_to_db_state_table("col_counters_in_sync", "true")
 
+        # Create FTS table
+        sql = """
+        CREATE VIRTUAL TABLE fts_target
+        USING fts5(unique_id, concat_all);
+        """
+        c.execute(sql)
+        self.conn.commit()
+
         # https://stackoverflow.com/questions/1711631/improve-insert-per-second-performance-of-sqlite
         c.execute("PRAGMA synchronous = EXTRA")
         c.execute("PRAGMA journal_mode = WAL")
@@ -237,6 +245,7 @@ class SearchDatabase:
 
         # See here: https://stackoverflow.com/questions/52912010
         result_tuples = results_batch["result_tuples"]
+
         c = self.conn.cursor()
 
         try:
@@ -245,7 +254,18 @@ class SearchDatabase:
             c.execute("rollback")
             c.close()
             raise sqlite3.IntegrityError()
-        self.conn.commit()
+
+        # This will have errored out and rolled back already if there was an integrity error
+        # i.e. these lines will not be hit
+
+        # Insert FTS entries
+        result_tuples = [(t[0], t[2]) for t in result_tuples]
+
+        sql = """
+        INSERT INTO fts_target
+        VALUES (?, ?)
+        """
+        c.executemany(sql, result_tuples)
 
         # Passed by reference so can mutate object
         # Note counters only updated if whole transaction completes successfully
@@ -265,6 +285,8 @@ class SearchDatabase:
             insert_tuple = insert_data["df_tuple"]
             try:
                 c.execute("INSERT INTO df VALUES (?, ?, ?)", insert_tuple)
+                fts_tuple = (insert_tuple[0], insert_tuple[2])
+                c.execute("INSERT INTO fts_target VALUES (?, ?)", fts_tuple)
             except sqlite3.IntegrityError:
                 logger.debug(
                     f"Record id {insert_tuple[0]} already exists in db, ignoring"
@@ -443,31 +465,8 @@ class SearchDatabase:
 
         c.close()
 
-    def _create_or_replace_fts_table(self):
-        c = self.conn.cursor()
-        logger.debug("Starting to create FTS table")
-        # Create FTS
-        c.execute("DROP TABLE IF EXISTS fts_target")
-        sql = """
-        CREATE VIRTUAL TABLE fts_target
-        USING fts5(unique_id, concat_all);
-        """
-        c.execute(sql)
-
-        sql = """
-        INSERT INTO fts_target(unique_id, concat_all)
-        SELECT unique_id, concat_all
-        FROM df
-        """
-        c.execute(sql)
-
-        self.conn.commit()
-        c.close()
-        logger.debug("Created FTS table")
-
     def build_or_replace_stats_tables(self):
         self._update_token_stats_tables()
-        self._create_or_replace_fts_table()
 
     def find_potental_matches(
         self,
