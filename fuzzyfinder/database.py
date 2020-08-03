@@ -5,6 +5,8 @@ from functools import partial
 import uuid
 import warnings
 
+from datetime import datetime
+
 import sqlite3
 
 from .record import Record
@@ -345,75 +347,51 @@ class SearchDatabase:
 
         logger.info("starting to write all col counters")
 
-        if self.db_filename != ":memory:":
-            ####################################################
-            # Start of parallelisation of column_counter inserts - note this is only posible if db is on disk
-            ####################################################
-            p = Pool()
-            fn = partial(self._write_col_counter_to_db, db_conn_string=self.db_filename)
-            insert_data = self.column_counters.counters_as_list_for_parallel_write()
+        columns = self.column_counters.columns
+        c = self.conn.cursor()
+        for col in columns:
+            counter = self.column_counters[col]
 
-            p.map(fn, insert_data, chunksize=1)
+            start_time = datetime.now()
 
-            p.close()
-            p.join()
+            try:
+                # This is slightly faster, but requires a relative new version of sqlite
+                for token, value in counter.items():
 
-            ####################################################
-            # End of parallelisation of column_counter inserts
-            ####################################################
-        else:
-            data = self.column_counters.counters_as_list_for_parallel_write()
-            for d in data:
-                self._write_col_counter_to_db(d, "", self.conn)
+                    sql = f"""
+                        INSERT INTO {col}_token_counts VALUES (?, ?, ?)
+                        ON CONFLICT(token) DO UPDATE SET
+                        token_count = token_count + ?
+                        WHERE token = ?;
+                    """
 
-        self.set_key_value_to_db_state_table("col_counters_in_sync", "true")
-        # reset column counters
-        self.column_counters = None
+                    c.execute(sql, (token, value, None, value, token))
+            except sqlite3.OperationalError:
+                # Older versions of sqlite that do not support upsert
 
-    @staticmethod
-    def _write_col_counter_to_db(data, db_conn_string, db_conn=None):
+                for token, value in counter.items():
 
-        if not db_conn:
-            conn = sqlite3.connect(db_conn_string, timeout=1000)
-        else:
-            conn = db_conn
-        c = conn.cursor()
+                    sql = f"""
+                        INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
+                    """
+                    c.execute(sql, (token, 0, None))
 
-        col = data["col"]
-        counter = data["counter"]
+                    sql = f"""
+                    UPDATE {col}_token_counts SET token_count = token_count + {value}
+                        WHERE token = '{token}';
+                    """
+                    c.execute(sql)
 
-        try:
-            # This is slightly faster, but requires a relative new version of sqlite
-            for token, value in counter.items():
-
-                sql = f"""
-                    INSERT INTO {col}_token_counts VALUES (?, ?, ?)
-                    ON CONFLICT(token) DO UPDATE SET
-                    token_count = token_count + ?
-                    WHERE token = ?;
-                """
-
-                c.execute(sql, (token, value, None, value, token))
-        except sqlite3.OperationalError:
-            # Older versions of sqlite that do not support upsert
-
-            for token, value in counter.items():
-
-                sql = f"""
-                    INSERT OR IGNORE INTO {col}_token_counts VALUES (?, ?, ?)
-                """
-                c.execute(sql, (token, 0, None))
-
-                sql = f"""
-                UPDATE {col}_token_counts SET token_count = token_count + {value}
-                    WHERE token = '{token}';
-                """
-                c.execute(sql)
+            duration = datetime.now() - start_time
+            logger.debug(f"Writing column counters for {col} took {duration}")
 
         c.close()
-        conn.commit()
+        self.conn.commit()
 
-        logger.info(f"finished writing col counter {col}")
+        self.set_key_value_to_db_state_table("col_counters_in_sync", "true")
+
+        # reset column counters
+        self.column_counters = None
 
     def set_example_record_from_db(self):
         c = self.conn.cursor()
@@ -581,13 +559,6 @@ class ColumnCounters:
         for col in self.columns:
             new_counter = new_column_counters[col]
             self.update_single_column(col, new_counter)
-
-    def counters_as_list_for_parallel_write(self):
-        items = []
-        for c in self.columns:
-            items.append({"col": c, "counter": self[c]})
-
-        return items
 
     def __repr__(self):
         return self.col_token_counts.__repr__()
