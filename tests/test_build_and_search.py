@@ -25,12 +25,11 @@ def test_build_and_search():
 
     search_rec = {'unique_id': 4, 'first_name': 'robin', 'surname': None}
 
-    
-    assert '1' in db.find_potental_matches(search_rec).keys()
+    assert 1 in db.find_potental_matches(search_rec).keys()
 
     # With record caching, we want to make sure that if the search rec is changed but the unique id 
     # is for some reason left the same, we get different search results 
 
     search_rec = {'unique_id': 4, 'first_name': 'david', 'surname': None}
     
-    assert '4' in db.find_potental_matches(search_rec).keys()
+    assert 4 in db.find_potental_matches(search_rec).keys()
