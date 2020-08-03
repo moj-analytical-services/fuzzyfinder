@@ -59,8 +59,6 @@ class SearchDatabase:
         # rather than writing after each table
         self.column_counters = None
 
-        self._records_written_counter = 0
-
     @property
     def _table_df_exists(self):
         c = self.conn.cursor()
@@ -449,7 +447,6 @@ class SearchDatabase:
             write_column_counters=write_column_counters,
         )
 
-        logger.debug(f"Records written: {self._records_written_counter }")
 
     def _update_token_stats_tables(self):
         rec = self.example_record
