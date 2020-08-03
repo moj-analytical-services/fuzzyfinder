@@ -308,7 +308,7 @@ class SearchDatabase:
         fn = partial(
             self._record_batch_to_insert_data, unique_id_col=self.unique_id_col
         )
-        results_batches = p.imap(fn, batches_of_records)
+        results_batches = p.imap_unordered(fn, batches_of_records)
 
         if self.column_counters is None:
             self.column_counters = ColumnCounters(self.example_record)
@@ -353,7 +353,7 @@ class SearchDatabase:
             fn = partial(self._write_col_counter_to_db, db_conn_string=self.db_filename)
             insert_data = self.column_counters.counters_as_list_for_parallel_write()
 
-            p.imap(fn, insert_data)
+            p.map(fn, insert_data, chunksize=1)
 
             p.close()
             p.join()
@@ -374,15 +374,13 @@ class SearchDatabase:
     def _write_col_counter_to_db(data, db_conn_string, db_conn=None):
 
         if not db_conn:
-            conn = sqlite3.connect(db_conn_string)
+            conn = sqlite3.connect(db_conn_string, timeout=1000)
         else:
             conn = db_conn
         c = conn.cursor()
 
         col = data["col"]
         counter = data["counter"]
-
-        logger.debug(f"starting to write col counter {col}")
 
         try:
             # This is slightly faster, but requires a relative new version of sqlite
@@ -412,8 +410,8 @@ class SearchDatabase:
                 """
                 c.execute(sql)
 
-        conn.commit()
         c.close()
+        conn.commit()
 
         logger.info(f"finished writing col counter {col}")
 
