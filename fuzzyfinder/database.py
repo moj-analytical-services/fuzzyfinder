@@ -266,6 +266,8 @@ class SearchDatabase:
         VALUES (?, ?)
         """
         c.executemany(sql, result_tuples)
+        c.close()
+        self.conn.commit()
 
         # Passed by reference so can mutate object
         # Note counters only updated if whole transaction completes successfully
