@@ -447,7 +447,6 @@ class SearchDatabase:
             write_column_counters=write_column_counters,
         )
 
-
     def _update_token_stats_tables(self):
         rec = self.example_record
         columns = rec.columns_except_unique_id

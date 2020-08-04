@@ -73,7 +73,8 @@ class RecordComparisonScorer:
         for t in matching_tokens:
             p = self.token_probs[col][t]["proportion"]
             # logger.debug(f'Scoring matching token {t} from search record as {p}')
-            prob = p * prob
+            if p != "does_not_exist_in_db":
+                prob = p * prob
         return prob
 
     def _get_prob_unmatching(self, unmatching_tokens_from_search_record, col):
