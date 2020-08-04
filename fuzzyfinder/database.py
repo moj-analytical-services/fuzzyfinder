@@ -4,6 +4,7 @@ import json
 from functools import partial
 import uuid
 import warnings
+import copy
 
 from datetime import datetime
 
@@ -497,11 +498,13 @@ class SearchDatabase:
         search_intensity=500,
         individual_search_limit=50,
     ):
+
+        search_dict = copy.deepcopy(search_dict)
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record_" + uuid.uuid4().hex
         else:
             search_dict[self.unique_id_col] = (
-                str(search_dict[self.unique_id_col]) + uuid.uuid4().hex
+                str(search_dict[self.unique_id_col]) + " " + uuid.uuid4().hex
             )
 
         finder = MatchFinder(
