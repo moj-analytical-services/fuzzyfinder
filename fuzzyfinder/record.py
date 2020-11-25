@@ -6,7 +6,7 @@ from metaphone import doublemetaphone
 
 
 class Record:
-    """ Represents a row of a dataset.
+    """Represents a row of a dataset.
 
     A row is represented as a dictionary called 'row_dict' like :
 
@@ -26,11 +26,13 @@ class Record:
         record_dict: dict,
         unique_id_col: str,
         sqlite_db_conn: sqlite3.Connection = None,
+        cols_to_ignore: list = [],
     ):
         """
         Args:
             record_dict (dict): A row of data represented as a dictionary with colnames as keys and col values as values
             unique_id_col (str): The column that contains the unique record identifier.
+            cols_to_ignore (list): List of columns that should be ignored when populating the FTS search database
             sqlite_db_conn (sqlie3.Connection):  A connection to a sqlite database that contains column statistics
 
         """
@@ -38,6 +40,8 @@ class Record:
         self.record_dict = deepcopy(record_dict)
         self.conn = sqlite_db_conn
         self.unique_id_col = unique_id_col
+
+        self.cols_to_ignore = cols_to_ignore
 
         if self.unique_id_col not in self.record_dict:
             raise KeyError(
@@ -58,6 +62,13 @@ class Record:
     def columns_except_unique_id(self):
         cols = self.record_dict.keys()
         return [c for c in cols if c != self.unique_id_col]
+
+    @property
+    def columns_to_index(self):
+        cols = self.record_dict.keys()
+        cols = [c for c in cols if c != self.unique_id_col]
+        cols = [c for c in cols if c not in self.cols_to_ignore]
+        return cols
 
     @staticmethod
     @lru_cache(maxsize=int(1e6))
@@ -88,11 +99,10 @@ class Record:
 
     @property
     def tokenised(self):
-        """The original record dictionary with values tokenised into arrays {"col1": [tkn1, tkn2], "col2":[]}
-        """
+        """The original record dictionary with values tokenised into arrays {"col1": [tkn1, tkn2], "col2":[]}"""
         record_tokenised = {}
         for col, value in self.record_dict.items():
-            if col != self.unique_id_col:
+            if col in self.columns_to_index:
                 record_tokenised[col] = Record.tokenise_value(value)
         return record_tokenised
 
@@ -115,8 +125,7 @@ class Record:
 
     @property
     def tokenised_misspellings(self):
-        """The original record dictionary with dmetaphone tokens instead of original values
-        """
+        """The original record dictionary with dmetaphone tokens instead of original values"""
         tokenised_misspellings = {}
         for col, tokens in self.tokenised.items():
             tokenised_misspellings[col] = Record.tokens_to_misspelling_tokens(tokens)
