@@ -41,7 +41,7 @@ class RecordComparisonScorer:
         # logger.debug('starting scoring')
         # logger.debug(f'search rec is {self.search_rec.record_dict}')
         # logger.debug(f'comparison rec is {self.potenital_match_rec.record_dict}')
-        for col in self.search_rec.columns_except_unique_id:
+        for col in self.search_rec.columns_to_index:
             # logger.debug(f'scoring col {col}')
             p = self.column_probability(col)
             probability = probability * p

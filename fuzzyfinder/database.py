@@ -24,11 +24,14 @@ class SearchDatabase:
     that contains the records we want to search within
     """
 
-    def __init__(self, db_filename: str = None):
+    def __init__(self, db_filename: str = None, cols_to_ignore: list = []):
         """
         Args:
             filename (str, optional):  The filename for the database.  If none, the database will be an in-memory
-            sqlite database
+                sqlite database
+            cols_to_ignore (str, optional): Ignore these columns when conducting searches.  Must be set
+                before adding rows
+
         """
 
         if not db_filename:
@@ -40,9 +43,15 @@ class SearchDatabase:
         # The connection will render query results as list of dicts
         self.conn.row_factory = dict_factory
 
+        self.cols_to_ignore = cols_to_ignore
         # Check whether user has opened a previously-created database or this is a new database
 
-        if not self._table_df_exists:
+        if self._table_df_exists:
+            if cols_to_ignore:
+                raise ValueError(
+                    "You cannot set cols to ignore on an existing databsae"
+                )
+        else:
             self.initialise_db()
 
         self.unique_id_col = None
@@ -53,6 +62,7 @@ class SearchDatabase:
         if not self._table_df_is_empty:
             self.set_unique_id_col_from_db()
             self.set_example_record_from_db()
+            self.set_cols_to_ignore_from_db()
             self.check_col_counters()
 
         # If the user is adding multiple talbes (e.g. calling write_pandas_dataframe several times)
@@ -116,6 +126,9 @@ class SearchDatabase:
 
         self.set_key_value_to_db_state_table("unique_id_col", None)
         self.set_key_value_to_db_state_table("col_counters_in_sync", "true")
+        self.set_key_value_to_db_state_table(
+            "cols_to_ignore", json.dumps(self.cols_to_ignore)
+        )
 
         # Create FTS table
         sql = """
@@ -167,7 +180,7 @@ class SearchDatabase:
 
     def initialise_token_tables(self):
         rec = self.example_record
-        columns = rec.columns_except_unique_id
+        columns = rec.columns_to_index
         c = self.conn.cursor()
 
         for col in columns:
@@ -180,7 +193,9 @@ class SearchDatabase:
         c.close()
 
     @staticmethod
-    def _record_dict_to_insert_data(record_dict: dict, unique_id_col: str):
+    def _record_dict_to_insert_data(
+        record_dict: dict, unique_id_col: str, cols_to_ignore: list = []
+    ):
         """Process a single record dict into data reaady to be entered into the database
 
         Args:
@@ -191,14 +206,16 @@ class SearchDatabase:
                   'col_token_counts' a dictionary of Counters(), one for each column, containing token counts
         """
 
-        record = Record(record_dict, unique_id_col=unique_id_col)
+        record = Record(
+            record_dict, unique_id_col=unique_id_col, cols_to_ignore=cols_to_ignore
+        )
         uid = record.id
         jsond = json.dumps(record.record_dict)
         concat = record.tokenised_stringified_with_misspellings
 
         df_tuple = (uid, jsond, concat)
 
-        columns = record.columns_except_unique_id
+        columns = record.columns_to_index
         tfd = record.tokenised_including_mispellings
 
         column_counters = ColumnCounters(record)
@@ -209,7 +226,9 @@ class SearchDatabase:
         return {"df_tuple": df_tuple, "column_counters": column_counters}
 
     @staticmethod
-    def _record_batch_to_insert_data(record_dicts: list, unique_id_col: str):
+    def _record_batch_to_insert_data(
+        record_dicts: list, unique_id_col: str, cols_to_ignore: list
+    ):
         """Process a list of record dictionaries into data ready to be entered into the database.
 
         Args:
@@ -224,14 +243,18 @@ class SearchDatabase:
         results_batch = {
             "result_tuples": [],
             "column_counters": ColumnCounters(
-                Record(record_dicts[0], unique_id_col=unique_id_col)
+                Record(
+                    record_dicts[0],
+                    unique_id_col=unique_id_col,
+                    cols_to_ignore=cols_to_ignore,
+                )
             ),
             "original_dicts": record_dicts,
         }
 
         for rd in record_dicts:
             single_record_results = SearchDatabase._record_dict_to_insert_data(
-                rd, unique_id_col=unique_id_col
+                rd, unique_id_col=unique_id_col, cols_to_ignore=cols_to_ignore
             )
             rt = single_record_results["df_tuple"]
             results_batch["result_tuples"].append(rt)
@@ -320,7 +343,11 @@ class SearchDatabase:
             self.set_key_value_to_db_state_table("unique_id_col", unique_id_col)
 
         if self.example_record is None:
-            record = Record(list_dicts[0], unique_id_col=self.unique_id_col)
+            record = Record(
+                list_dicts[0],
+                unique_id_col=self.unique_id_col,
+                cols_to_ignore=self.cols_to_ignore,
+            )
             self.example_record = record
             self.initialise_token_tables()
 
@@ -331,7 +358,9 @@ class SearchDatabase:
         ##########################
         p = Pool()
         fn = partial(
-            self._record_batch_to_insert_data, unique_id_col=self.unique_id_col
+            self._record_batch_to_insert_data,
+            unique_id_col=self.unique_id_col,
+            cols_to_ignore=self.cols_to_ignore,
         )
         results_batches = p.imap_unordered(fn, batches_of_records)
 
@@ -424,7 +453,14 @@ class SearchDatabase:
         c.close()
         record = record["original_record"]
         record = json.loads(record)
-        self.example_record = Record(record, unique_id_col=self.unique_id_col)
+        self.example_record = Record(
+            record, unique_id_col=self.unique_id_col, cols_to_ignore=self.cols_to_ignore
+        )
+
+    def set_cols_to_ignore_from_db(self):
+        cols_to_ignore = self.get_value_from_db_state_table("cols_to_ignore")
+        print(json.loads(cols_to_ignore))
+        self.cols_to_ignore = json.loads(cols_to_ignore)
 
     def set_unique_id_col_from_db(self):
         unique_id_col = self.get_value_from_db_state_table("unique_id_col")
@@ -450,7 +486,7 @@ class SearchDatabase:
 
     def _update_token_stats_tables(self):
         rec = self.example_record
-        columns = rec.columns_except_unique_id
+        columns = rec.columns_to_index
 
         c = self.conn.cursor()
         for col in columns:
@@ -532,7 +568,7 @@ class ColumnCounters:
     def __init__(self, record: Record):
         # Initialise one counter per column to store token counts
         col_token_counts = {}
-        columns = record.columns_except_unique_id
+        columns = record.columns_to_index
         for col in columns:
             col_token_counts[col] = Counter()
 
