@@ -79,7 +79,11 @@ class Record:
         if value is None:
             return []
 
-        value = str(value)
+        if type(value) == float:
+            value = f"{value:.4g}".replace(".", "")
+            value = re.sub(r"e\+\d{1,4}", "", value)
+        else:
+            value = str(value)
 
         if value.strip() == "":
             return []
