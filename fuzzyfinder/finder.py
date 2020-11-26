@@ -27,6 +27,7 @@ class MatchFinder:
         self.unique_id_col = db.unique_id_col
 
         self.cols_to_ignore = db.cols_to_ignore
+        self.dmeta_cols = db.dmeta_cols
 
         if self.unique_id_col not in search_dict:
             search_dict[self.unique_id_col] = "search_record"
@@ -41,7 +42,11 @@ class MatchFinder:
                 )
 
         self.record = Record(
-            search_dict, self.unique_id_col, db.conn, cols_to_ignore=self.cols_to_ignore
+            search_dict,
+            self.unique_id_col,
+            db.conn,
+            cols_to_ignore=self.cols_to_ignore,
+            dmeta_cols=self.dmeta_cols,
         )
 
         self.number_of_searches = 0
@@ -94,6 +99,7 @@ class MatchFinder:
                 self.unique_id_col,
                 self.conn,
                 cols_to_ignore=self.cols_to_ignore,
+                dmeta_cols=self.dmeta_cols,
             )
             scorer = RecordComparisonScorer(self.record, found_record)
             score = scorer.score

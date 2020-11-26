@@ -27,12 +27,14 @@ class Record:
         unique_id_col: str,
         sqlite_db_conn: sqlite3.Connection = None,
         cols_to_ignore: list = [],
+        dmeta_cols: list = None,
     ):
         """
         Args:
             record_dict (dict): A row of data represented as a dictionary with colnames as keys and col values as values
             unique_id_col (str): The column that contains the unique record identifier.
             cols_to_ignore (list): List of columns that should be ignored when populating the FTS search database
+            dmeta_cols (list): List of columns to create dmetaphone token variants for
             sqlite_db_conn (sqlie3.Connection):  A connection to a sqlite database that contains column statistics
 
         """
@@ -42,6 +44,7 @@ class Record:
         self.unique_id_col = unique_id_col
 
         self.cols_to_ignore = cols_to_ignore
+        self.dmeta_cols = dmeta_cols
 
         if self.unique_id_col not in self.record_dict:
             raise KeyError(
@@ -128,7 +131,15 @@ class Record:
         """The original record dictionary with dmetaphone tokens instead of original values"""
         tokenised_misspellings = {}
         for col, tokens in self.tokenised.items():
-            tokenised_misspellings[col] = Record.tokens_to_misspelling_tokens(tokens)
+            if self.dmeta_cols is None:
+                tokenised_misspellings[col] = Record.tokens_to_misspelling_tokens(
+                    tokens
+                )
+            elif col in self.dmeta_cols:
+                tokenised_misspellings[col] = Record.tokens_to_misspelling_tokens(
+                    tokens
+                )
+
         return tokenised_misspellings
 
     @property
@@ -136,7 +147,10 @@ class Record:
         tfd = self.tokenised
         tfdm = self.tokenised_misspellings
         for col in tfd:
-            tfd[col] = tfd[col] + tfdm[col]
+            if self.dmeta_cols is None:
+                tfd[col] = tfd[col] + tfdm[col]
+            elif col in self.dmeta_cols:
+                tfd[col] = tfd[col] + tfdm[col]
         return tfd
 
     @property
