@@ -101,8 +101,8 @@ class Record:
         value = re.sub(r"(?=[A-Z]{3,}\d{2,})([A-Z]+)(\d+)", r"\1 \2", value)
         value = re.sub(r"(?=\d{3,}[A-Z]{2,})(\d+)([A-Z]+)", r"\1 \2", value)
 
-        # Bad idea?  Split up into words of max length 8
-        value = re.sub(r"(\w{8})", r"\1 ", value)
+        # Bad idea?  Split up really long words
+        value = re.sub(r"(\w{4})(\w{4})(\w{4})", r"\1\2 \3", value)
         value = re.sub(r"\s{2,100}", " ", value)
 
         value = value.strip()
