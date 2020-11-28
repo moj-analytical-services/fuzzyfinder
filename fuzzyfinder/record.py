@@ -97,9 +97,9 @@ class Record:
         value = re.sub(r"\s{2,100}", " ", value)  # Multiple spaces become a space
         value = re.sub(r"[^\w\s]", " ", value)  # Any punctuation becomes a space
 
-        if len(value) > 5:  # Tokenise long words at boundary between char and num
-            value = re.sub(r"([A-Z])(\d)", r"\1 \2", value)
-            value = re.sub(r"(\d)([A-Z])", r"\1 \2", value)  # Vice versa
+        # Tokenise long words at boundary between char and num
+        value = re.sub(r"(?=[A-Z]{3,}\d{2,})([A-Z]+)(\d+)", r"\1 \2", value)
+        value = re.sub(r"(?=\d{3,}[A-Z]{2,})(\d+)([A-Z]+)", r"\1 \2", value)
 
         # Bad idea?  Split up into words of max length 8
         value = re.sub(r"(\w{8})", r"\1 ", value)
