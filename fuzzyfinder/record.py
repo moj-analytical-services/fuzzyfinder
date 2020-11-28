@@ -3,6 +3,7 @@ from functools import lru_cache
 import re
 import sqlite3
 from metaphone import doublemetaphone
+import math
 
 
 class Record:
@@ -80,8 +81,11 @@ class Record:
             return []
 
         if type(value) == float:
-            value = f"{value:.4g}".replace(".", "")
-            value = re.sub(r"e\+\d{1,4}", "", value)
+            if math.isnan(value):
+                value = ""
+            else:
+                value = f"{value:.4g}".replace(".", "")
+                value = re.sub(r"e\+\d{1,4}", "", value)
         else:
             value = str(value)
 
@@ -90,14 +94,15 @@ class Record:
 
         value = value.upper()
 
-        value = re.sub(r"\s{2,100}", " ", value)
+        value = re.sub(r"\s{2,100}", " ", value)  # Multiple spaces become a space
         value = re.sub(r"[^\w\s]", " ", value)  # Any punctuation becomes a space
-        value = re.sub(
-            r"([A-Z])(\d)", r"\1 \2", value
-        )  # Tokenise at word boundary between char and num
-        value = re.sub(r"(\d)([A-Z])", r"\1 \2", value)  # Vice versa
-        # Bad idea?  Split up into words of max length 8
-        value = re.sub(r"(\w{8})", r"\1 ", value)
+
+        # Tokenise long words at boundary between char and num
+        value = re.sub(r"(?=[A-Z]{3,}\d{2,})([A-Z]+)(\d+)", r"\1 \2", value)
+        value = re.sub(r"(?=\d{3,}[A-Z]{2,})(\d+)([A-Z]+)", r"\1 \2", value)
+
+        # Bad idea?  Split up really long words
+        value = re.sub(r"(\w{4})(\w{4})(\w{4})", r"\1\2 \3", value)
         value = re.sub(r"\s{2,100}", " ", value)
 
         value = value.strip()
