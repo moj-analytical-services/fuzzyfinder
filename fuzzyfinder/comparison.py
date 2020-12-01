@@ -111,4 +111,6 @@ class RecordComparisonScorer:
 
     @staticmethod
     def prob_to_score(prob):
+        if prob == 0.0:
+            return -20
         return -(log10(prob)) / 30
