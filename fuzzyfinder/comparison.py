@@ -81,26 +81,23 @@ class RecordComparisonScorer:
         # If the unmatching token is not a misspelling, then undo its probability
         prob = 1
 
-        for (
-            t
-        ) in (
-            unmatching_tokens_from_search_record
-        ):  # Tokens in the search record which are NOT in the comparison record
-
-            if self.token_is_misspelling(
-                col, t
-            ):  # If it's a potential misspelling neither punish nor reqard
+        # Tokens in the search record which are NOT in the comparison record
+        for t in unmatching_tokens_from_search_record:
+            # If it's a potential misspelling neither punish nor reqard
+            if self.token_is_misspelling(col, t):
                 p = 1
             else:
                 p = self.token_probs[col][t]["proportion"]
-                if (
-                    p == "does_not_exist_in_db"
-                ):  # If we've never seen this token we can't account for it
+                # If we've never seen this token we can't account for it
+                if p == "does_not_exist_in_db":
                     p = 1
-            # logger.debug(f'Scoring unmatching token {t} from search record as {p}')
+
             prob = p * prob
 
-        return 1 / prob
+        if prob == 0:
+            return 1e10
+        else:
+            return 1 / prob
 
     def token_is_misspelling(self, col, token_from_search_record):
         for t in self.potential_match_rec_tkns[col]:
