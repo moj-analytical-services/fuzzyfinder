@@ -6,6 +6,7 @@ import uuid
 import warnings
 import copy
 
+
 from datetime import datetime
 
 import sqlite3
@@ -230,7 +231,15 @@ class SearchDatabase:
             dmeta_cols=dmeta_cols,
         )
         uid = record.id
-        jsond = json.dumps(record.record_dict)
+
+        def convert(o):
+            if "NA" in repr(type(o)):
+                return None
+            else:
+                return int(o)
+
+        jsond = json.dumps(record.record_dict, default=convert)
+
         concat = record.tokenised_stringified_with_misspellings
 
         df_tuple = (uid, jsond, concat)
