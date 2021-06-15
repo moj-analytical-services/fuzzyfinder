@@ -2,14 +2,14 @@ import warnings
 from difflib import ndiff
 
 try:
-    from rapidfuzz.levenshtein import distance
+    from rapidfuzz.string_metric import levenshtein
 
-    levenshtein_distance = distance
+    levenshtein_distance = levenshtein
 except ModuleNotFoundError:
     levenshtein_distance = None
 
 
-def backup_levenstein(str_1, str_2):
+def backup_levenshtein(str_1, str_2):
     """
     The Levenshtein distance is a string metric for measuring the difference between two sequences.
     It is calculated as the minimum number of single-character edits necessary to transform one string into another
@@ -35,4 +35,4 @@ if not levenshtein_distance:
     warnings.warn(
         "Using a native Python levenstein function.  pip install rapidfuzz for a faster implementation"
     )
-    levenshtein_distance = backup_levenstein
+    levenshtein_distance = backup_levenshtein
